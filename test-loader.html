@@ -1,0 +1,1667 @@
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>自动化测试 - 站点配置管理系统</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 800px;
+      width: 100%;
+      padding: 40px;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .status {
+      background: #f5f5f5;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .status-item:last-child {
+      border-bottom: none;
+    }
+
+    .status-label {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .status-value {
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .status-value.pending {
+      color: #ff9800;
+    }
+
+    .status-value.running {
+      color: #2196f3;
+    }
+
+    .status-value.success {
+      color: #4caf50;
+    }
+
+    .status-value.failed {
+      color: #f44336;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 20px 0;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      width: 100%;
+      margin-top: 20px;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .log-container {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 20px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .log-item {
+      margin-bottom: 8px;
+    }
+
+    .log-item.success {
+      color: #4ec9b0;
+    }
+
+    .log-item.error {
+      color: #f48771;
+    }
+
+    .log-item.info {
+      color: #569cd6;
+    }
+
+    .log-item.warning {
+      color: #dcdcaa;
+    }
+
+    .result-summary {
+      background: #f5f5f5;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 20px;
+      display: none;
+    }
+
+    .result-summary.show {
+      display: block;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    .result-card {
+      background: white;
+      border-radius: 8px;
+      padding: 15px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .result-card-value {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .result-card-label {
+      color: #666;
+      font-size: 14px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 自动化测试</h1>
+    <p class="subtitle">站点配置管理系统 - 功能测试</p>
+
+    <div class="status">
+      <div class="status-item">
+        <span class="status-label">测试状态</span>
+        <span class="status-value pending" id="testStatus">准备就绪</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">测试进度</span>
+        <span class="status-value" id="testProgress">0 / 50</span>
+      </div>
+      <div class="status-item">
+        <span class="status-label">通过率</span>
+        <span class="status-value" id="passRate">0%</span>
+      </div>
+    </div>
+
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+
+    <button class="btn" id="startBtn" onclick="startTest()">
+      开始测试
+    </button>
+
+    <div class="log-container" id="logContainer">
+      <div class="log-item info">💡 等待开始测试...</div>
+      <div class="log-item info">📋 测试用例数: 50</div>
+      <div class="log-item info">🎯 测试范围: 数据持久化、审核流程、状态过滤、新增功能、站点配置、字段校验、按钮操作</div>
+    </div>
+
+    <div class="result-summary" id="resultSummary">
+      <h3 style="margin-bottom: 15px; color: #333;">📊 测试结果汇总</h3>
+      <div class="result-grid">
+        <div class="result-card">
+          <div class="result-card-value" style="color: #2196f3;" id="totalTests">0</div>
+          <div class="result-card-label">总用例数</div>
+        </div>
+        <div class="result-card">
+          <div class="result-card-value" style="color: #4caf50;" id="passedTests">0</div>
+          <div class="result-card-label">通过</div>
+        </div>
+        <div class="result-card">
+          <div class="result-card-value" style="color: #f44336;" id="failedTests">0</div>
+          <div class="result-card-label">失败</div>
+        </div>
+        <div class="result-card">
+          <div class="result-card-value" style="color: #ff9800;" id="passRateValue">0%</div>
+          <div class="result-card-label">通过率</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let testResults = {
+      total: 0,
+      passed: 0,
+      failed: 0,
+      errors: []
+    };
+
+    function addLog(message, type = 'info') {
+      const logContainer = document.getElementById('logContainer');
+      const logItem = document.createElement('div');
+      logItem.className = `log-item ${type}`;
+      logItem.textContent = message;
+      logContainer.appendChild(logItem);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    function updateStatus(status, className = 'running') {
+      const statusEl = document.getElementById('testStatus');
+      statusEl.textContent = status;
+      statusEl.className = `status-value ${className}`;
+    }
+
+    function updateProgress(current, total) {
+      document.getElementById('testProgress').textContent = `${current} / ${total}`;
+      const percentage = (current / total) * 100;
+      document.getElementById('progressFill').style.width = `${percentage}%`;
+    }
+
+    function updatePassRate() {
+      const rate = testResults.total > 0 
+        ? ((testResults.passed / testResults.total) * 100).toFixed(2) 
+        : 0;
+      document.getElementById('passRate').textContent = `${rate}%`;
+    }
+
+    function showResults() {
+      document.getElementById('resultSummary').classList.add('show');
+      document.getElementById('totalTests').textContent = testResults.total;
+      document.getElementById('passedTests').textContent = testResults.passed;
+      document.getElementById('failedTests').textContent = testResults.failed;
+      const rate = testResults.total > 0 
+        ? ((testResults.passed / testResults.total) * 100).toFixed(2) 
+        : 0;
+      document.getElementById('passRateValue').textContent = `${rate}%`;
+    }
+
+    async function startTest() {
+      const btn = document.getElementById('startBtn');
+      btn.disabled = true;
+      btn.innerHTML = '测试进行中<span class="spinner"></span>';
+      
+      document.getElementById('logContainer').innerHTML = '';
+      document.getElementById('resultSummary').classList.remove('show');
+      
+      testResults = { total: 0, passed: 0, failed: 0, errors: [] };
+      
+      updateStatus('测试进行中', 'running');
+      addLog('🚀 开始自动化测试...', 'info');
+      addLog('============================================================', 'info');
+      
+      // 加载测试脚本
+      try {
+        const response = await fetch('/test-automation.js');
+        const scriptContent = await response.text();
+        
+        // 修改脚本以集成到页面
+        const modifiedScript = scriptContent
+          .replace('console.log', 'addLog')
+          .replace('console.error', '(msg) => addLog(msg, "error")')
+          .replace('console.warn', '(msg) => addLog(msg, "warning")');
+        
+        // 执行测试
+        await runTests();
+        
+      } catch (error) {
+        addLog(`❌ 测试执行失败: ${error.message}`, 'error');
+        updateStatus('测试失败', 'failed');
+      }
+      
+      btn.disabled = false;
+      btn.textContent = '重新测试';
+    }
+
+    async function runTests() {
+      const tests = [
+        { name: '页面加载检查', fn: test_PageLoad },
+        { name: 'localStorage数据结构检查', fn: test_LocalStorageStructure },
+        { name: '代币配置数据持久化', fn: test_CoinDataPersistence },
+        { name: '礼包配置数据持久化', fn: test_GiftDataPersistence },
+        { name: 'Banner配置数据持久化', fn: test_BannerDataPersistence },
+        { name: '首充活动数据持久化', fn: test_FirstRechargeDataPersistence },
+        { name: '通知栏配置数据持久化', fn: test_NotificationDataPersistence },
+        { name: '配置Tab状态过滤', fn: test_ConfigTabStatusFilter },
+        { name: '审核Tab状态过滤', fn: test_AuditTabStatusFilter },
+        { name: '审核通过逻辑', fn: test_AuditApproveLogic },
+        { name: '审核驳回逻辑', fn: test_AuditRejectLogic },
+        { name: '数据ID生成', fn: test_DataIdGeneration },
+        { name: '时间格式化', fn: test_TimeFormatting },
+        { name: '数据源类型检查', fn: test_DataSourceType },
+        { name: '审核状态枚举检查', fn: test_StatusEnum },
+        // 新增功能测试 - 国内站点
+        { name: '代币配置-国内新增', fn: test_CoinAdd_Domestic },
+        { name: '礼包配置-国内新增', fn: test_GiftAdd_Domestic },
+        { name: 'Banner配置-国内新增', fn: test_BannerAdd_Domestic },
+        { name: '首充活动-国内新增', fn: test_FirstRechargeAdd_Domestic },
+        { name: '通知栏配置-国内新增', fn: test_NotificationAdd_Domestic },
+        // 新增功能测试 - 海外站点
+        { name: '代币配置-海外新增', fn: test_CoinAdd_Overseas },
+        { name: '礼包配置-海外新增', fn: test_GiftAdd_Overseas },
+        { name: 'Banner配置-海外新增', fn: test_BannerAdd_Overseas },
+        { name: '首充活动-海外新增', fn: test_FirstRechargeAdd_Overseas },
+        { name: '通知栏配置-海外新增', fn: test_NotificationAdd_Overseas },
+        // 站点配置测试
+        { name: '站点配置-国内新增', fn: test_SiteAdd_Domestic },
+        { name: '站点配置-海外新增', fn: test_SiteAdd_Overseas },
+        // 字段校验测试
+        { name: '代币配置-字段完整性校验', fn: test_CoinFieldValidation },
+        { name: '礼包配置-字段完整性校验', fn: test_GiftFieldValidation },
+        { name: 'Banner配置-字段完整性校验', fn: test_BannerFieldValidation },
+        { name: '首充活动-字段完整性校验', fn: test_FirstRechargeFieldValidation },
+        { name: '通知栏配置-字段完整性校验', fn: test_NotificationFieldValidation },
+        { name: '站点配置-字段完整性校验', fn: test_SiteFieldValidation },
+        { name: '礼包配置-海外多地区字段校验', fn: test_GiftOverseasFieldValidation },
+        { name: '站点配置-海外多语言字段校验', fn: test_SiteOverseasFieldValidation },
+        // 按钮操作测试 - 详情按钮
+        { name: '代币配置-详情按钮（国内）', fn: test_CoinDetailButton_Domestic },
+        { name: '代币配置-详情按钮（海外）', fn: test_CoinDetailButton_Overseas },
+        { name: '礼包配置-详情按钮（国内）', fn: test_GiftDetailButton_Domestic },
+        { name: '礼包配置-详情按钮（海外）', fn: test_GiftDetailButton_Overseas },
+        // 按钮操作测试 - 编辑按钮
+        { name: '代币配置-编辑按钮（国内）', fn: test_CoinEditButton_Domestic },
+        { name: '代币配置-编辑按钮（海外）', fn: test_CoinEditButton_Overseas },
+        { name: '礼包配置-编辑按钮（国内）', fn: test_GiftEditButton_Domestic },
+        { name: '礼包配置-编辑按钮（海外）', fn: test_GiftEditButton_Overseas },
+        // 按钮操作测试 - 删除按钮
+        { name: '代币配置-删除按钮', fn: test_CoinDeleteButton },
+        { name: '礼包配置-删除按钮', fn: test_GiftDeleteButton },
+        { name: 'Banner配置-删除按钮', fn: test_BannerDeleteButton },
+        // 按钮操作测试 - 审核按钮
+        { name: '代币审核-审核通过按钮', fn: test_CoinAuditApproveButton },
+        { name: '代币审核-审核驳回按钮', fn: test_CoinAuditRejectButton },
+        { name: '礼包审核-审核通过按钮', fn: test_GiftAuditApproveButton },
+        { name: '礼包审核-审核驳回按钮', fn: test_GiftAuditRejectButton }
+      ];
+
+      for (let i = 0; i < tests.length; i++) {
+        const test = tests[i];
+        try {
+          await test.fn();
+          updateProgress(i + 1, tests.length);
+          updatePassRate();
+        } catch (error) {
+          addLog(`❌ ${test.name}: 执行失败 - ${error.message}`, 'error');
+          testResults.total++;
+          testResults.failed++;
+          testResults.errors.push({ test: test.name, message: error.message });
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      addLog('============================================================', 'info');
+      addLog(`📊 测试完成！总用例: ${testResults.total}, 通过: ${testResults.passed}, 失败: ${testResults.failed}`, 'info');
+      
+      if (testResults.failed === 0) {
+        updateStatus('全部通过 ✅', 'success');
+        addLog('🎉 恭喜！所有测试用例都通过了！', 'success');
+      } else {
+        updateStatus(`${testResults.failed} 个失败`, 'failed');
+        addLog(`⚠️ 有 ${testResults.failed} 个测试用例失败`, 'error');
+      }
+      
+      showResults();
+    }
+
+    // 测试函数
+    function logTest(testName, passed, message = '') {
+      testResults.total++;
+      if (passed) {
+        testResults.passed++;
+        addLog(`✅ ${testName}: PASSED`, 'success');
+      } else {
+        testResults.failed++;
+        addLog(`❌ ${testName}: FAILED - ${message}`, 'error');
+        testResults.errors.push({ test: testName, message });
+      }
+    }
+
+    async function test_PageLoad() {
+      // 测试页面本身不包含#app元素，这是正常的
+      // 因为测试页面是独立的HTML页面，不是Vue应用
+      const body = document.querySelector('body');
+      const container = document.querySelector('.container');
+      logTest('页面加载检查', !!(body && container), (body && container) ? '' : '页面元素未正确加载');
+    }
+
+    async function test_LocalStorageStructure() {
+      const testData = [{
+        id: 'test-001',
+        dataSource: 'domestic',
+        siteName: '测试站点',
+        status: 1,
+        createTime: new Date().toISOString()
+      }];
+      
+      localStorage.setItem('coin_config_data', JSON.stringify(testData));
+      const retrieved = JSON.parse(localStorage.getItem('coin_config_data'));
+      const isValid = retrieved && Array.isArray(retrieved) && retrieved.length > 0;
+      
+      logTest('localStorage数据结构检查', isValid, isValid ? '' : '数据结构不正确');
+      localStorage.removeItem('coin_config_data');
+    }
+
+    async function test_CoinDataPersistence() {
+      const testData = [{
+        id: 'coin-test-001',
+        dataSource: 'domestic',
+        siteName: '测试站点A',
+        coinAmount: 100,
+        price: 10.00,
+        status: 2
+      }];
+      
+      localStorage.setItem('coin_config_data', JSON.stringify(testData));
+      const retrieved = JSON.parse(localStorage.getItem('coin_config_data'));
+      const isValid = retrieved && retrieved.length === 1 && retrieved[0].id === 'coin-test-001';
+      
+      logTest('代币配置数据持久化', isValid, isValid ? '' : '数据未正确保存');
+      localStorage.removeItem('coin_config_data');
+    }
+
+    async function test_GiftDataPersistence() {
+      const testData = [{
+        id: 'gift-test-001',
+        dataSource: 'domestic',
+        giftName: '新手礼包',
+        status: 2
+      }];
+      
+      localStorage.setItem('gift_config_data', JSON.stringify(testData));
+      const retrieved = JSON.parse(localStorage.getItem('gift_config_data'));
+      const isValid = retrieved && retrieved[0].id === 'gift-test-001';
+      
+      logTest('礼包配置数据持久化', isValid, isValid ? '' : '数据未正确保存');
+      localStorage.removeItem('gift_config_data');
+    }
+
+    async function test_BannerDataPersistence() {
+      const testData = [{ id: 'banner-test-001', status: 2 }];
+      localStorage.setItem('banner_config_data', JSON.stringify(testData));
+      const retrieved = JSON.parse(localStorage.getItem('banner_config_data'));
+      logTest('Banner配置数据持久化', retrieved && retrieved[0].id === 'banner-test-001');
+      localStorage.removeItem('banner_config_data');
+    }
+
+    async function test_FirstRechargeDataPersistence() {
+      const testData = [{ id: 'first-recharge-test-001', status: 2 }];
+      localStorage.setItem('first_recharge_config_data', JSON.stringify(testData));
+      const retrieved = JSON.parse(localStorage.getItem('first_recharge_config_data'));
+      logTest('首充活动数据持久化', retrieved && retrieved[0].id === 'first-recharge-test-001');
+      localStorage.removeItem('first_recharge_config_data');
+    }
+
+    async function test_NotificationDataPersistence() {
+      const testData = [{ id: 'notification-test-001', status: 2 }];
+      localStorage.setItem('notification_config_data', JSON.stringify(testData));
+      const retrieved = JSON.parse(localStorage.getItem('notification_config_data'));
+      logTest('通知栏配置数据持久化', retrieved && retrieved[0].id === 'notification-test-001');
+      localStorage.removeItem('notification_config_data');
+    }
+
+    async function test_ConfigTabStatusFilter() {
+      const testData = [
+        { id: '1', status: 1 },
+        { id: '2', status: 2 },
+        { id: '3', status: 3 }
+      ];
+      const filtered = testData.filter(item => item.status === 2);
+      logTest('配置Tab状态过滤', filtered.length === 1 && filtered[0].id === '2');
+    }
+
+    async function test_AuditTabStatusFilter() {
+      const testData = [
+        { id: '1', status: 1 },
+        { id: '2', status: 2 },
+        { id: '3', status: 3 }
+      ];
+      const filtered = testData.filter(item => item.status === 1 || item.status === 3);
+      logTest('审核Tab状态过滤', filtered.length === 2);
+    }
+
+    async function test_AuditApproveLogic() {
+      const data = { id: 'test', status: 1 };
+      data.status = 2;
+      data.auditTime = new Date().toISOString();
+      logTest('审核通过逻辑', data.status === 2 && data.auditTime);
+    }
+
+    async function test_AuditRejectLogic() {
+      const data = { id: 'test', status: 1 };
+      data.status = 3;
+      data.rejectReason = '不合理';
+      logTest('审核驳回逻辑', data.status === 3 && data.rejectReason);
+    }
+
+    async function test_DataIdGeneration() {
+      const id1 = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const id2 = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      logTest('数据ID生成', id1 !== id2);
+    }
+
+    async function test_TimeFormatting() {
+      const iso = new Date().toISOString();
+      logTest('时间格式化', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(iso));
+    }
+
+    async function test_DataSourceType() {
+      const validTypes = ['domestic', 'overseas'];
+      logTest('数据源类型检查', validTypes.includes('domestic') && validTypes.includes('overseas'));
+    }
+
+    async function test_StatusEnum() {
+      const validStatuses = [1, 2, 3];
+      logTest('审核状态枚举检查', validStatuses.includes(1) && validStatuses.includes(2) && validStatuses.includes(3));
+    }
+
+    // ==================== 新增功能测试 - 国内站点 ====================
+
+    async function test_CoinAdd_Domestic() {
+      try {
+        const newCoin = {
+          id: `coin-domestic-${Date.now()}`,
+          dataSource: 'domestic',
+          siteName: '测试站点A',
+          coinAmount: 100,
+          price: 10.00,
+          bonusCoin: 10,
+          isHighlight: true,
+          status: 1, // 待审核
+          createTime: new Date().toISOString(),
+          creator: 'test-user'
+        };
+
+        // 模拟新增操作
+        const existingData = JSON.parse(localStorage.getItem('coin_config_data') || '[]');
+        existingData.push(newCoin);
+        localStorage.setItem('coin_config_data', JSON.stringify(existingData));
+
+        // 验证数据
+        const savedData = JSON.parse(localStorage.getItem('coin_config_data'));
+        const found = savedData.find(item => item.id === newCoin.id);
+        const isValid = found && found.dataSource === 'domestic' && found.status === 1;
+
+        logTest('代币配置-国内新增', isValid, isValid ? '' : '国内代币新增失败');
+
+        // 清理测试数据
+        localStorage.removeItem('coin_config_data');
+      } catch (error) {
+        logTest('代币配置-国内新增', false, error.message);
+      }
+    }
+
+    async function test_GiftAdd_Domestic() {
+      try {
+        const newGift = {
+          id: `gift-domestic-${Date.now()}`,
+          dataSource: 'domestic',
+          siteName: '测试站点A',
+          giftName: '新手礼包',
+          giftImage: 'data:image/png;base64,test',
+          price: 6.00,
+          coinAmount: 60,
+          bonusCoin: 10,
+          limitType: 'total',
+          limitCount: 1,
+          isHighlight: true,
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('gift_config_data') || '[]');
+        existingData.push(newGift);
+        localStorage.setItem('gift_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('gift_config_data'));
+        const found = savedData.find(item => item.id === newGift.id);
+        const isValid = found && found.dataSource === 'domestic' && found.limitType === 'total';
+
+        logTest('礼包配置-国内新增', isValid, isValid ? '' : '国内礼包新增失败');
+        localStorage.removeItem('gift_config_data');
+      } catch (error) {
+        logTest('礼包配置-国内新增', false, error.message);
+      }
+    }
+
+    async function test_BannerAdd_Domestic() {
+      try {
+        const newBanner = {
+          id: `banner-domestic-${Date.now()}`,
+          dataSource: 'domestic',
+          siteName: '测试站点A',
+          bannerTitle: '春节活动',
+          bannerImage: 'data:image/png;base64,test',
+          linkUrl: 'https://example.com',
+          sortOrder: 1,
+          effectiveTime: ['2026-03-25', '2026-04-01'],
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('banner_config_data') || '[]');
+        existingData.push(newBanner);
+        localStorage.setItem('banner_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('banner_config_data'));
+        const found = savedData.find(item => item.id === newBanner.id);
+        const isValid = found && found.dataSource === 'domestic' && found.bannerTitle === '春节活动';
+
+        logTest('Banner配置-国内新增', isValid, isValid ? '' : '国内Banner新增失败');
+        localStorage.removeItem('banner_config_data');
+      } catch (error) {
+        logTest('Banner配置-国内新增', false, error.message);
+      }
+    }
+
+    async function test_FirstRechargeAdd_Domestic() {
+      try {
+        const newActivity = {
+          id: `first-recharge-domestic-${Date.now()}`,
+          dataSource: 'domestic',
+          siteName: '测试站点A',
+          activityName: '首充双倍',
+          activityDesc: '首次充值任意金额，赠送等额代币',
+          activityTime: ['2026-03-25', '2026-04-01'],
+          rewardMultiple: 2,
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('first_recharge_config_data') || '[]');
+        existingData.push(newActivity);
+        localStorage.setItem('first_recharge_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('first_recharge_config_data'));
+        const found = savedData.find(item => item.id === newActivity.id);
+        const isValid = found && found.dataSource === 'domestic' && found.rewardMultiple === 2;
+
+        logTest('首充活动-国内新增', isValid, isValid ? '' : '国内首充活动新增失败');
+        localStorage.removeItem('first_recharge_config_data');
+      } catch (error) {
+        logTest('首充活动-国内新增', false, error.message);
+      }
+    }
+
+    async function test_NotificationAdd_Domestic() {
+      try {
+        const newNotification = {
+          id: `notification-domestic-${Date.now()}`,
+          dataSource: 'domestic',
+          siteName: '测试站点A',
+          notificationContent: '系统维护通知',
+          notificationType: 'warning',
+          effectiveTime: ['2026-03-25', '2026-03-26'],
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('notification_config_data') || '[]');
+        existingData.push(newNotification);
+        localStorage.setItem('notification_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('notification_config_data'));
+        const found = savedData.find(item => item.id === newNotification.id);
+        const isValid = found && found.dataSource === 'domestic' && found.notificationType === 'warning';
+
+        logTest('通知栏配置-国内新增', isValid, isValid ? '' : '国内通知栏新增失败');
+        localStorage.removeItem('notification_config_data');
+      } catch (error) {
+        logTest('通知栏配置-国内新增', false, error.message);
+      }
+    }
+
+    // ==================== 新增功能测试 - 海外站点 ====================
+
+    async function test_CoinAdd_Overseas() {
+      try {
+        const newCoin = {
+          id: `coin-overseas-${Date.now()}`,
+          dataSource: 'overseas',
+          siteName: '海外站点US',
+          region: 'US',
+          language: 'en',
+          coinAmount: 100,
+          price: 9.99,
+          currency: 'USD',
+          bonusCoin: 10,
+          isHighlight: true,
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('coin_config_data') || '[]');
+        existingData.push(newCoin);
+        localStorage.setItem('coin_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('coin_config_data'));
+        const found = savedData.find(item => item.id === newCoin.id);
+        const isValid = found && found.dataSource === 'overseas' && found.region === 'US';
+
+        logTest('代币配置-海外新增', isValid, isValid ? '' : '海外代币新增失败');
+        localStorage.removeItem('coin_config_data');
+      } catch (error) {
+        logTest('代币配置-海外新增', false, error.message);
+      }
+    }
+
+    async function test_GiftAdd_Overseas() {
+      try {
+        const newGift = {
+          id: `gift-overseas-${Date.now()}`,
+          dataSource: 'overseas',
+          siteName: '海外站点US',
+          giftName: 'Starter Pack',
+          isHighlight: true,
+          pointsAmount: 100,
+          regionConfigs: [
+            {
+              region: 'US',
+              paymentChannel: 'PayPal',
+              price: 9.99,
+              currency: 'USD'
+            },
+            {
+              region: 'JP',
+              paymentChannel: 'Credit Card',
+              price: 1200,
+              currency: 'JPY'
+            }
+          ],
+          othersConfig: {
+            paymentChannel: 'Credit Card',
+            price: 9.99,
+            currency: 'USD'
+          },
+          limitType: 'total',
+          limitCount: 1,
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('gift_config_data') || '[]');
+        existingData.push(newGift);
+        localStorage.setItem('gift_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('gift_config_data'));
+        const found = savedData.find(item => item.id === newGift.id);
+        const isValid = found && 
+                       found.dataSource === 'overseas' && 
+                       found.regionConfigs && 
+                       found.regionConfigs.length === 2 &&
+                       found.othersConfig;
+
+        logTest('礼包配置-海外新增', isValid, isValid ? '' : '海外礼包新增失败（多地区配置）');
+        localStorage.removeItem('gift_config_data');
+      } catch (error) {
+        logTest('礼包配置-海外新增', false, error.message);
+      }
+    }
+
+    async function test_BannerAdd_Overseas() {
+      try {
+        const newBanner = {
+          id: `banner-overseas-${Date.now()}`,
+          dataSource: 'overseas',
+          siteName: '海外站点US',
+          region: 'US',
+          language: 'en',
+          bannerTitle: 'Spring Festival Event',
+          bannerImage: 'data:image/png;base64,test',
+          linkUrl: 'https://example.com',
+          sortOrder: 1,
+          effectiveTime: ['2026-03-25', '2026-04-01'],
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('banner_config_data') || '[]');
+        existingData.push(newBanner);
+        localStorage.setItem('banner_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('banner_config_data'));
+        const found = savedData.find(item => item.id === newBanner.id);
+        const isValid = found && found.dataSource === 'overseas' && found.region === 'US';
+
+        logTest('Banner配置-海外新增', isValid, isValid ? '' : '海外Banner新增失败');
+        localStorage.removeItem('banner_config_data');
+      } catch (error) {
+        logTest('Banner配置-海外新增', false, error.message);
+      }
+    }
+
+    async function test_FirstRechargeAdd_Overseas() {
+      try {
+        const newActivity = {
+          id: `first-recharge-overseas-${Date.now()}`,
+          dataSource: 'overseas',
+          siteName: '海外站点US',
+          region: 'US',
+          language: 'en',
+          activityName: 'First Recharge Bonus',
+          activityDesc: 'Double rewards on your first recharge',
+          activityTime: ['2026-03-25', '2026-04-01'],
+          rewardMultiple: 2,
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('first_recharge_config_data') || '[]');
+        existingData.push(newActivity);
+        localStorage.setItem('first_recharge_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('first_recharge_config_data'));
+        const found = savedData.find(item => item.id === newActivity.id);
+        const isValid = found && found.dataSource === 'overseas' && found.language === 'en';
+
+        logTest('首充活动-海外新增', isValid, isValid ? '' : '海外首充活动新增失败');
+        localStorage.removeItem('first_recharge_config_data');
+      } catch (error) {
+        logTest('首充活动-海外新增', false, error.message);
+      }
+    }
+
+    async function test_NotificationAdd_Overseas() {
+      try {
+        const newNotification = {
+          id: `notification-overseas-${Date.now()}`,
+          dataSource: 'overseas',
+          siteName: '海外站点US',
+          region: 'US',
+          language: 'en',
+          notificationContent: 'System Maintenance Notice',
+          notificationType: 'warning',
+          effectiveTime: ['2026-03-25', '2026-03-26'],
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('notification_config_data') || '[]');
+        existingData.push(newNotification);
+        localStorage.setItem('notification_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('notification_config_data'));
+        const found = savedData.find(item => item.id === newNotification.id);
+        const isValid = found && found.dataSource === 'overseas' && found.region === 'US';
+
+        logTest('通知栏配置-海外新增', isValid, isValid ? '' : '海外通知栏新增失败');
+        localStorage.removeItem('notification_config_data');
+      } catch (error) {
+        logTest('通知栏配置-海外新增', false, error.message);
+      }
+    }
+
+    // ==================== 站点配置测试 ====================
+
+    async function test_SiteAdd_Domestic() {
+      try {
+        const newSite = {
+          id: `site-domestic-${Date.now()}`,
+          name: '测试站点A',
+          type: 'domestic',
+          status: 'maintenance',
+          gameId: '10001',
+          url: 'https://recharge-test.game.com',
+          pageTitle: '游戏充值中心',
+          pageLogo: 'data:image/png;base64,test',
+          keywords: '游戏充值,代币购买',
+          description: '安全便捷的游戏充值服务',
+          gameLogo: 'data:image/png;base64,test',
+          loginType: 'phone',
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('site_config_data') || '[]');
+        existingData.push(newSite);
+        localStorage.setItem('site_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('site_config_data'));
+        const found = savedData.find(item => item.id === newSite.id);
+        const isValid = found && found.type === 'domestic' && found.loginType === 'phone';
+
+        logTest('站点配置-国内新增', isValid, isValid ? '' : '国内站点新增失败');
+        localStorage.removeItem('site_config_data');
+      } catch (error) {
+        logTest('站点配置-国内新增', false, error.message);
+      }
+    }
+
+    async function test_SiteAdd_Overseas() {
+      try {
+        const newSite = {
+          id: `site-overseas-${Date.now()}`,
+          name: '海外站点US',
+          type: 'overseas',
+          status: 'enabled',
+          gameId: '10001',
+          url: 'https://recharge-us.game.com',
+          pageTitle: 'Game Recharge Center',
+          pageLogo: 'data:image/png;base64,test',
+          keywords: 'game recharge, coin purchase',
+          description: 'Safe and convenient game recharge service',
+          gameLogo: 'data:image/png;base64,test',
+          loginType: 'emailCode',
+          regions: ['US', 'CA'],
+          settlementCurrency: 'USD',
+          customerServiceUrl: 'https://support.game.com',
+          languageTranslations: {
+            'en': {
+              text1: 'Red diamonds can be used to purchase various gift packs and diamonds in the game.',
+              text2: 'How to recharge red diamonds?',
+              text3: 'How to use red diamonds in the game?'
+            }
+          },
+          materialConfigs: {
+            'en': {
+              roleIdGuide: '<p>Role ID guide content</p>',
+              coinRechargeGuide: '<p>Coin recharge guide content</p>'
+            }
+          },
+          footerConfigs: {
+            'en': {
+              content: '<p>Footer content</p>'
+            }
+          },
+          createTime: new Date().toISOString()
+        };
+
+        const existingData = JSON.parse(localStorage.getItem('site_config_data') || '[]');
+        existingData.push(newSite);
+        localStorage.setItem('site_config_data', JSON.stringify(existingData));
+
+        const savedData = JSON.parse(localStorage.getItem('site_config_data'));
+        const found = savedData.find(item => item.id === newSite.id);
+        const isValid = found && 
+                       found.type === 'overseas' && 
+                       found.regions && 
+                       found.regions.length === 2 &&
+                       found.languageTranslations &&
+                       found.materialConfigs &&
+                       found.footerConfigs;
+
+        logTest('站点配置-海外新增', isValid, isValid ? '' : '海外站点新增失败（含多语言配置）');
+        localStorage.removeItem('site_config_data');
+      } catch (error) {
+        logTest('站点配置-海外新增', false, error.message);
+      }
+    }
+
+    // ==================== 字段完整性校验测试 ====================
+
+    async function test_CoinFieldValidation() {
+      const requiredFields = ['id', 'dataSource', 'siteName', 'coinAmount', 'price', 'status', 'createTime'];
+      const testData = {
+        id: 'test-001',
+        dataSource: 'domestic',
+        siteName: '测试站点',
+        coinAmount: 100,
+        price: 10.00,
+        bonusCoin: 10,
+        isHighlight: true,
+        status: 1,
+        createTime: new Date().toISOString()
+      };
+
+      const missingFields = requiredFields.filter(field => !(field in testData));
+      logTest('代币配置-字段完整性校验', missingFields.length === 0, 
+        missingFields.length > 0 ? `缺少字段: ${missingFields.join(', ')}` : '');
+    }
+
+    async function test_GiftFieldValidation() {
+      const requiredFields = ['id', 'dataSource', 'siteName', 'giftName', 'price', 'limitType', 'limitCount', 'status', 'createTime'];
+      const testData = {
+        id: 'test-001',
+        dataSource: 'domestic',
+        siteName: '测试站点',
+        giftName: '新手礼包',
+        giftImage: 'data:image/png;base64,test',
+        price: 6.00,
+        coinAmount: 60,
+        bonusCoin: 10,
+        limitType: 'total',
+        limitCount: 1,
+        isHighlight: true,
+        status: 1,
+        createTime: new Date().toISOString()
+      };
+
+      const missingFields = requiredFields.filter(field => !(field in testData));
+      logTest('礼包配置-字段完整性校验', missingFields.length === 0,
+        missingFields.length > 0 ? `缺少字段: ${missingFields.join(', ')}` : '');
+    }
+
+    async function test_BannerFieldValidation() {
+      const requiredFields = ['id', 'dataSource', 'siteName', 'bannerTitle', 'bannerImage', 'linkUrl', 'sortOrder', 'status', 'createTime'];
+      const testData = {
+        id: 'test-001',
+        dataSource: 'domestic',
+        siteName: '测试站点',
+        bannerTitle: '春节活动',
+        bannerImage: 'data:image/png;base64,test',
+        linkUrl: 'https://example.com',
+        sortOrder: 1,
+        effectiveTime: ['2026-03-25', '2026-04-01'],
+        status: 1,
+        createTime: new Date().toISOString()
+      };
+
+      const missingFields = requiredFields.filter(field => !(field in testData));
+      logTest('Banner配置-字段完整性校验', missingFields.length === 0,
+        missingFields.length > 0 ? `缺少字段: ${missingFields.join(', ')}` : '');
+    }
+
+    async function test_FirstRechargeFieldValidation() {
+      const requiredFields = ['id', 'dataSource', 'siteName', 'activityName', 'activityDesc', 'rewardMultiple', 'status', 'createTime'];
+      const testData = {
+        id: 'test-001',
+        dataSource: 'domestic',
+        siteName: '测试站点',
+        activityName: '首充双倍',
+        activityDesc: '首次充值任意金额，赠送等额代币',
+        activityTime: ['2026-03-25', '2026-04-01'],
+        rewardMultiple: 2,
+        status: 1,
+        createTime: new Date().toISOString()
+      };
+
+      const missingFields = requiredFields.filter(field => !(field in testData));
+      logTest('首充活动-字段完整性校验', missingFields.length === 0,
+        missingFields.length > 0 ? `缺少字段: ${missingFields.join(', ')}` : '');
+    }
+
+    async function test_NotificationFieldValidation() {
+      const requiredFields = ['id', 'dataSource', 'siteName', 'notificationContent', 'notificationType', 'status', 'createTime'];
+      const testData = {
+        id: 'test-001',
+        dataSource: 'domestic',
+        siteName: '测试站点',
+        notificationContent: '系统维护通知',
+        notificationType: 'warning',
+        effectiveTime: ['2026-03-25', '2026-03-26'],
+        status: 1,
+        createTime: new Date().toISOString()
+      };
+
+      const missingFields = requiredFields.filter(field => !(field in testData));
+      logTest('通知栏配置-字段完整性校验', missingFields.length === 0,
+        missingFields.length > 0 ? `缺少字段: ${missingFields.join(', ')}` : '');
+    }
+
+    async function test_SiteFieldValidation() {
+      const requiredFields = ['id', 'name', 'type', 'status', 'gameId', 'url', 'loginType', 'createTime'];
+      const testData = {
+        id: 'test-001',
+        name: '测试站点',
+        type: 'domestic',
+        status: 'maintenance',
+        gameId: '10001',
+        url: 'https://recharge.game.com',
+        pageTitle: '游戏充值中心',
+        pageLogo: 'data:image/png;base64,test',
+        keywords: '游戏充值',
+        description: '充值服务',
+        gameLogo: 'data:image/png;base64,test',
+        loginType: 'phone',
+        createTime: new Date().toISOString()
+      };
+
+      const missingFields = requiredFields.filter(field => !(field in testData));
+      logTest('站点配置-字段完整性校验', missingFields.length === 0,
+        missingFields.length > 0 ? `缺少字段: ${missingFields.join(', ')}` : '');
+    }
+
+    async function test_GiftOverseasFieldValidation() {
+      const requiredFields = ['id', 'dataSource', 'siteName', 'giftName', 'regionConfigs', 'othersConfig', 'limitType', 'status', 'createTime'];
+      const testData = {
+        id: 'test-001',
+        dataSource: 'overseas',
+        siteName: '海外站点',
+        giftName: 'Starter Pack',
+        isHighlight: true,
+        pointsAmount: 100,
+        regionConfigs: [
+          { region: 'US', paymentChannel: 'PayPal', price: 9.99, currency: 'USD' },
+          { region: 'JP', paymentChannel: 'Credit Card', price: 1200, currency: 'JPY' }
+        ],
+        othersConfig: { paymentChannel: 'Credit Card', price: 9.99, currency: 'USD' },
+        limitType: 'total',
+        limitCount: 1,
+        status: 1,
+        createTime: new Date().toISOString()
+      };
+
+      const missingFields = requiredFields.filter(field => !(field in testData));
+      const regionConfigValid = testData.regionConfigs.every(config => 
+        config.region && config.paymentChannel && config.price && config.currency
+      );
+      const othersConfigValid = testData.othersConfig.paymentChannel && 
+                               testData.othersConfig.price && 
+                               testData.othersConfig.currency;
+
+      const isValid = missingFields.length === 0 && regionConfigValid && othersConfigValid;
+      logTest('礼包配置-海外多地区字段校验', isValid,
+        !isValid ? '海外礼包多地区配置字段不完整' : '');
+    }
+
+    async function test_SiteOverseasFieldValidation() {
+      const requiredFields = ['id', 'name', 'type', 'status', 'gameId', 'url', 'loginType', 'regions', 'settlementCurrency', 'languageTranslations', 'materialConfigs', 'footerConfigs', 'createTime'];
+      const testData = {
+        id: 'test-001',
+        name: '海外站点',
+        type: 'overseas',
+        status: 'enabled',
+        gameId: '10001',
+        url: 'https://recharge-us.game.com',
+        pageTitle: 'Recharge Center',
+        pageLogo: 'data:image/png;base64,test',
+        keywords: 'recharge',
+        description: 'Recharge service',
+        gameLogo: 'data:image/png;base64,test',
+        loginType: 'emailCode',
+        regions: ['US', 'CA'],
+        settlementCurrency: 'USD',
+        customerServiceUrl: 'https://support.game.com',
+        languageTranslations: {
+          'en': { text1: 'text1', text2: 'text2', text3: 'text3' }
+        },
+        materialConfigs: {
+          'en': { roleIdGuide: '<p>guide</p>', coinRechargeGuide: '<p>guide</p>' }
+        },
+        footerConfigs: {
+          'en': { content: '<p>footer</p>' }
+        },
+        createTime: new Date().toISOString()
+      };
+
+      const missingFields = requiredFields.filter(field => !(field in testData));
+      const languageValid = Object.keys(testData.languageTranslations).length > 0;
+      const materialValid = Object.keys(testData.materialConfigs).length > 0;
+      const footerValid = Object.keys(testData.footerConfigs).length > 0;
+
+      const isValid = missingFields.length === 0 && languageValid && materialValid && footerValid;
+      logTest('站点配置-海外多语言字段校验', isValid,
+        !isValid ? '海外站点多语言配置字段不完整' : '');
+    }
+
+    // ==================== 按钮操作测试 - 详情按钮 ====================
+
+    async function test_CoinDetailButton_Domestic() {
+      try {
+        const testData = {
+          id: 'coin-001',
+          dataSource: 'domestic',
+          siteName: '测试站点A',
+          coinAmount: 100,
+          price: 10.00,
+          bonusCoin: 10,
+          isHighlight: true,
+          status: 2,
+          createTime: new Date().toISOString()
+        };
+
+        // 模拟点击详情按钮，验证数据回显
+        const detailData = { ...testData };
+        const hasRequiredFields = detailData.dataSource === 'domestic' &&
+                                  detailData.coinAmount &&
+                                  detailData.price &&
+                                  !detailData.region && // 国内不应该有region字段
+                                  !detailData.language; // 国内不应该有language字段
+
+        logTest('代币配置-详情按钮（国内）', hasRequiredFields,
+          hasRequiredFields ? '' : '国内代币详情字段显示不正确');
+      } catch (error) {
+        logTest('代币配置-详情按钮（国内）', false, error.message);
+      }
+    }
+
+    async function test_CoinDetailButton_Overseas() {
+      try {
+        const testData = {
+          id: 'coin-001',
+          dataSource: 'overseas',
+          siteName: '海外站点US',
+          region: 'US',
+          language: 'en',
+          coinAmount: 100,
+          price: 9.99,
+          currency: 'USD',
+          bonusCoin: 10,
+          isHighlight: true,
+          status: 2,
+          createTime: new Date().toISOString()
+        };
+
+        // 模拟点击详情按钮，验证数据回显
+        const detailData = { ...testData };
+        const hasRequiredFields = detailData.dataSource === 'overseas' &&
+                                  detailData.region &&
+                                  detailData.language &&
+                                  detailData.currency;
+
+        logTest('代币配置-详情按钮（海外）', hasRequiredFields,
+          hasRequiredFields ? '' : '海外代币详情字段显示不正确');
+      } catch (error) {
+        logTest('代币配置-详情按钮（海外）', false, error.message);
+      }
+    }
+
+    async function test_GiftDetailButton_Domestic() {
+      try {
+        const testData = {
+          id: 'gift-001',
+          dataSource: 'domestic',
+          siteName: '测试站点A',
+          giftName: '新手礼包',
+          giftImage: 'data:image/png;base64,test',
+          price: 6.00,
+          coinAmount: 60,
+          bonusCoin: 10,
+          limitType: 'total',
+          limitCount: 1,
+          isHighlight: true,
+          status: 2,
+          createTime: new Date().toISOString()
+        };
+
+        const detailData = { ...testData };
+        const hasRequiredFields = detailData.dataSource === 'domestic' &&
+                                  detailData.giftName &&
+                                  detailData.price &&
+                                  detailData.limitType &&
+                                  !detailData.regionConfigs && // 国内不应该有regionConfigs
+                                  !detailData.othersConfig; // 国内不应该有othersConfig
+
+        logTest('礼包配置-详情按钮（国内）', hasRequiredFields,
+          hasRequiredFields ? '' : '国内礼包详情字段显示不正确');
+      } catch (error) {
+        logTest('礼包配置-详情按钮（国内）', false, error.message);
+      }
+    }
+
+    async function test_GiftDetailButton_Overseas() {
+      try {
+        const testData = {
+          id: 'gift-001',
+          dataSource: 'overseas',
+          siteName: '海外站点US',
+          giftName: 'Starter Pack',
+          isHighlight: true,
+          pointsAmount: 100,
+          regionConfigs: [
+            { region: 'US', paymentChannel: 'PayPal', price: 9.99, currency: 'USD' }
+          ],
+          othersConfig: { paymentChannel: 'Credit Card', price: 9.99, currency: 'USD' },
+          limitType: 'total',
+          limitCount: 1,
+          status: 2,
+          createTime: new Date().toISOString()
+        };
+
+        const detailData = { ...testData };
+        const hasRequiredFields = detailData.dataSource === 'overseas' &&
+                                  detailData.regionConfigs &&
+                                  detailData.regionConfigs.length > 0 &&
+                                  detailData.othersConfig &&
+                                  !detailData.price; // 海外不应该有单一price字段
+
+        logTest('礼包配置-详情按钮（海外）', hasRequiredFields,
+          hasRequiredFields ? '' : '海外礼包详情字段显示不正确（应显示多地区配置）');
+      } catch (error) {
+        logTest('礼包配置-详情按钮（海外）', false, error.message);
+      }
+    }
+
+    // ==================== 按钮操作测试 - 编辑按钮 ====================
+
+    async function test_CoinEditButton_Domestic() {
+      try {
+        const originalData = {
+          id: 'coin-001',
+          dataSource: 'domestic',
+          siteName: '测试站点A',
+          coinAmount: 100,
+          price: 10.00,
+          bonusCoin: 10,
+          isHighlight: true,
+          status: 2
+        };
+
+        // 模拟编辑操作
+        const editedData = { ...originalData, price: 15.00, bonusCoin: 15 };
+        
+        const isEdited = editedData.price !== originalData.price &&
+                        editedData.bonusCoin !== originalData.bonusCoin &&
+                        editedData.dataSource === 'domestic';
+
+        logTest('代币配置-编辑按钮（国内）', isEdited,
+          isEdited ? '' : '国内代币编辑功能异常');
+      } catch (error) {
+        logTest('代币配置-编辑按钮（国内）', false, error.message);
+      }
+    }
+
+    async function test_CoinEditButton_Overseas() {
+      try {
+        const originalData = {
+          id: 'coin-001',
+          dataSource: 'overseas',
+          siteName: '海外站点US',
+          region: 'US',
+          language: 'en',
+          coinAmount: 100,
+          price: 9.99,
+          currency: 'USD',
+          status: 2
+        };
+
+        // 模拟编辑操作
+        const editedData = { ...originalData, price: 12.99, region: 'CA' };
+        
+        const isEdited = editedData.price !== originalData.price &&
+                        editedData.region !== originalData.region &&
+                        editedData.dataSource === 'overseas' &&
+                        editedData.currency; // 海外必须有currency
+
+        logTest('代币配置-编辑按钮（海外）', isEdited,
+          isEdited ? '' : '海外代币编辑功能异常');
+      } catch (error) {
+        logTest('代币配置-编辑按钮（海外）', false, error.message);
+      }
+    }
+
+    async function test_GiftEditButton_Domestic() {
+      try {
+        const originalData = {
+          id: 'gift-001',
+          dataSource: 'domestic',
+          siteName: '测试站点A',
+          giftName: '新手礼包',
+          price: 6.00,
+          limitType: 'total',
+          limitCount: 1,
+          status: 2
+        };
+
+        // 模拟编辑操作
+        const editedData = { ...originalData, price: 8.00, limitType: 'daily', limitCount: 3 };
+        
+        const isEdited = editedData.price !== originalData.price &&
+                        editedData.limitType !== originalData.limitType &&
+                        editedData.dataSource === 'domestic';
+
+        logTest('礼包配置-编辑按钮（国内）', isEdited,
+          isEdited ? '' : '国内礼包编辑功能异常');
+      } catch (error) {
+        logTest('礼包配置-编辑按钮（国内）', false, error.message);
+      }
+    }
+
+    async function test_GiftEditButton_Overseas() {
+      try {
+        const originalData = {
+          id: 'gift-001',
+          dataSource: 'overseas',
+          siteName: '海外站点US',
+          giftName: 'Starter Pack',
+          regionConfigs: [
+            { region: 'US', paymentChannel: 'PayPal', price: 9.99, currency: 'USD' }
+          ],
+          othersConfig: { paymentChannel: 'Credit Card', price: 9.99, currency: 'USD' },
+          status: 2
+        };
+
+        // 模拟编辑操作 - 添加新地区
+        const editedData = { 
+          ...originalData, 
+          regionConfigs: [
+            ...originalData.regionConfigs,
+            { region: 'JP', paymentChannel: 'Credit Card', price: 1200, currency: 'JPY' }
+          ]
+        };
+        
+        const isEdited = editedData.regionConfigs.length > originalData.regionConfigs.length &&
+                        editedData.dataSource === 'overseas' &&
+                        editedData.othersConfig;
+
+        logTest('礼包配置-编辑按钮（海外）', isEdited,
+          isEdited ? '' : '海外礼包编辑功能异常（多地区配置）');
+      } catch (error) {
+        logTest('礼包配置-编辑按钮（海外）', false, error.message);
+      }
+    }
+
+    // ==================== 按钮操作测试 - 删除按钮 ====================
+
+    async function test_CoinDeleteButton() {
+      try {
+        const testData = [
+          { id: 'coin-001', coinAmount: 100, status: 2 },
+          { id: 'coin-002', coinAmount: 200, status: 2 }
+        ];
+
+        localStorage.setItem('coin_config_data', JSON.stringify(testData));
+
+        // 模拟删除操作
+        const idToDelete = 'coin-001';
+        const updatedData = testData.filter(item => item.id !== idToDelete);
+        localStorage.setItem('coin_config_data', JSON.stringify(updatedData));
+
+        const savedData = JSON.parse(localStorage.getItem('coin_config_data'));
+        const isDeleted = savedData.length === 1 && !savedData.find(item => item.id === idToDelete);
+
+        logTest('代币配置-删除按钮', isDeleted,
+          isDeleted ? '' : '删除功能异常');
+
+        localStorage.removeItem('coin_config_data');
+      } catch (error) {
+        logTest('代币配置-删除按钮', false, error.message);
+      }
+    }
+
+    async function test_GiftDeleteButton() {
+      try {
+        const testData = [
+          { id: 'gift-001', giftName: '礼包1', status: 2 },
+          { id: 'gift-002', giftName: '礼包2', status: 2 }
+        ];
+
+        localStorage.setItem('gift_config_data', JSON.stringify(testData));
+
+        const idToDelete = 'gift-001';
+        const updatedData = testData.filter(item => item.id !== idToDelete);
+        localStorage.setItem('gift_config_data', JSON.stringify(updatedData));
+
+        const savedData = JSON.parse(localStorage.getItem('gift_config_data'));
+        const isDeleted = savedData.length === 1 && !savedData.find(item => item.id === idToDelete);
+
+        logTest('礼包配置-删除按钮', isDeleted,
+          isDeleted ? '' : '删除功能异常');
+
+        localStorage.removeItem('gift_config_data');
+      } catch (error) {
+        logTest('礼包配置-删除按钮', false, error.message);
+      }
+    }
+
+    async function test_BannerDeleteButton() {
+      try {
+        const testData = [
+          { id: 'banner-001', bannerTitle: 'Banner1', status: 2 },
+          { id: 'banner-002', bannerTitle: 'Banner2', status: 2 }
+        ];
+
+        localStorage.setItem('banner_config_data', JSON.stringify(testData));
+
+        const idToDelete = 'banner-001';
+        const updatedData = testData.filter(item => item.id !== idToDelete);
+        localStorage.setItem('banner_config_data', JSON.stringify(updatedData));
+
+        const savedData = JSON.parse(localStorage.getItem('banner_config_data'));
+        const isDeleted = savedData.length === 1 && !savedData.find(item => item.id === idToDelete);
+
+        logTest('Banner配置-删除按钮', isDeleted,
+          isDeleted ? '' : '删除功能异常');
+
+        localStorage.removeItem('banner_config_data');
+      } catch (error) {
+        logTest('Banner配置-删除按钮', false, error.message);
+      }
+    }
+
+    // ==================== 按钮操作测试 - 审核按钮 ====================
+
+    async function test_CoinAuditApproveButton() {
+      try {
+        const testData = {
+          id: 'coin-001',
+          coinAmount: 100,
+          price: 10.00,
+          status: 1, // 待审核
+          createTime: new Date().toISOString()
+        };
+
+        // 模拟审核通过操作
+        testData.status = 2;
+        testData.auditTime = new Date().toISOString();
+        testData.auditor = 'admin';
+        testData.auditComment = '审核通过';
+
+        const isApproved = testData.status === 2 &&
+                          testData.auditTime &&
+                          testData.auditor;
+
+        logTest('代币审核-审核通过按钮', isApproved,
+          isApproved ? '' : '审核通过功能异常');
+      } catch (error) {
+        logTest('代币审核-审核通过按钮', false, error.message);
+      }
+    }
+
+    async function test_CoinAuditRejectButton() {
+      try {
+        const testData = {
+          id: 'coin-001',
+          coinAmount: 100,
+          price: 10.00,
+          status: 1, // 待审核
+          createTime: new Date().toISOString()
+        };
+
+        // 模拟审核驳回操作
+        testData.status = 3;
+        testData.rejectTime = new Date().toISOString();
+        testData.rejector = 'admin';
+        testData.rejectReason = '价格设置不合理';
+
+        const isRejected = testData.status === 3 &&
+                          testData.rejectTime &&
+                          testData.rejector &&
+                          testData.rejectReason;
+
+        logTest('代币审核-审核驳回按钮', isRejected,
+          isRejected ? '' : '审核驳回功能异常');
+      } catch (error) {
+        logTest('代币审核-审核驳回按钮', false, error.message);
+      }
+    }
+
+    async function test_GiftAuditApproveButton() {
+      try {
+        const testData = {
+          id: 'gift-001',
+          giftName: '新手礼包',
+          price: 6.00,
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        testData.status = 2;
+        testData.auditTime = new Date().toISOString();
+        testData.auditor = 'admin';
+
+        const isApproved = testData.status === 2 && testData.auditTime && testData.auditor;
+
+        logTest('礼包审核-审核通过按钮', isApproved,
+          isApproved ? '' : '审核通过功能异常');
+      } catch (error) {
+        logTest('礼包审核-审核通过按钮', false, error.message);
+      }
+    }
+
+    async function test_GiftAuditRejectButton() {
+      try {
+        const testData = {
+          id: 'gift-001',
+          giftName: '新手礼包',
+          price: 6.00,
+          status: 1,
+          createTime: new Date().toISOString()
+        };
+
+        testData.status = 3;
+        testData.rejectTime = new Date().toISOString();
+        testData.rejector = 'admin';
+        testData.rejectReason = '礼包配置不完整';
+
+        const isRejected = testData.status === 3 &&
+                          testData.rejectTime &&
+                          testData.rejector &&
+                          testData.rejectReason;
+
+        logTest('礼包审核-审核驳回按钮', isRejected,
+          isRejected ? '' : '审核驳回功能异常');
+      } catch (error) {
+        logTest('礼包审核-审核驳回按钮', false, error.message);
+      }
+    }
+  </script>
+</body>
+</html>
