@@ -17,6 +17,7 @@
         // ── 读取B端配置 ───────────────────────────────────────
         const siteList = ls('site_config_data');
         const siteInfo = siteList.find(s => s.name === SITE) || {};
+        // B端status=2为已审核通过；B端地区代码为大写（JP/UK/US/Others）
         const allCoins = ls('coin_config_data').filter(c => c.siteName === SITE && c.status === 2);
         const allGifts = ls('gift_config_data').filter(g => g.siteName === SITE && g.giftStatus === 2 && g.enabled !== false);
         const banners  = ls('banner_config_data').filter(b => b.siteName === SITE && b.status === 2);
@@ -24,17 +25,84 @@
 
         if (siteInfo.pageTitle) document.title = siteInfo.pageTitle;
 
+        // ── B端地区元数据（大写代码） ─────────────────────────
+        // B端地区代码为大写，与原HTML小写不同，需统一处理
+        const REGION_META = {
+            CN: { name:'中国', flag:'🇨🇳', lang:'zh-CN', currency:'CNY', symbol:'¥' },
+            TW: { name:'台湾', flag:'🇹🇼', lang:'zh-TW', currency:'TWD', symbol:'NT$' },
+            JP: { name:'日本', flag:'🇯🇵', lang:'ja-JP', currency:'JPY', symbol:'¥' },
+            KR: { name:'韩国', flag:'🇰🇷', lang:'ko-KR', currency:'KRW', symbol:'₩' },
+            TH: { name:'泰国', flag:'🇹🇭', lang:'th-TH', currency:'THB', symbol:'฿' },
+            VN: { name:'越南', flag:'🇻🇳', lang:'vi-VN', currency:'VND', symbol:'₫' },
+            SG: { name:'新加坡', flag:'🇸🇬', lang:'en', currency:'SGD', symbol:'S$' },
+            IN: { name:'印度', flag:'🇮🇳', lang:'en', currency:'INR', symbol:'₹' },
+            UK: { name:'英国', flag:'🇬🇧', lang:'en', currency:'GBP', symbol:'£' },
+            FR: { name:'法国', flag:'🇫🇷', lang:'fr', currency:'EUR', symbol:'€' },
+            DE: { name:'德国', flag:'🇩🇪', lang:'de', currency:'EUR', symbol:'€' },
+            IT: { name:'意大利', flag:'🇮🇹', lang:'it', currency:'EUR', symbol:'€' },
+            ES: { name:'西班牙', flag:'🇪🇸', lang:'es', currency:'EUR', symbol:'€' },
+            RU: { name:'俄罗斯', flag:'🇷🇺', lang:'ru', currency:'RUB', symbol:'₽' },
+            US: { name:'美国', flag:'🇺🇸', lang:'en', currency:'USD', symbol:'$' },
+            CA: { name:'加拿大', flag:'🇨🇦', lang:'en', currency:'CAD', symbol:'C$' },
+            MX: { name:'墨西哥', flag:'🇲🇽', lang:'es', currency:'MXN', symbol:'MX$' },
+            BR: { name:'巴西', flag:'🇧🇷', lang:'pt', currency:'BRL', symbol:'R$' },
+            AU: { name:'澳大利亚', flag:'🇦🇺', lang:'en', currency:'AUD', symbol:'A$' },
+            NZ: { name:'新西兰', flag:'🇳🇿', lang:'en', currency:'NZD', symbol:'NZ$' },
+            Others: { name:'Others', flag:'🌍', lang:'en', currency:'USD', symbol:'$' }
+        };
+
         // ── 货币符号映射 ──────────────────────────────────────
         const currencySymbols = {
             USD:'$', EUR:'€', GBP:'£', JPY:'¥', KRW:'₩',
-            TWD:'NT$', HKD:'HK$', CNY:'¥', CAD:'C$', AUD:'A$'
+            TWD:'NT$', HKD:'HK$', CNY:'¥', CAD:'C$', AUD:'A$',
+            THB:'฿', VND:'₫', SGD:'S$', INR:'₹', RUB:'₽',
+            MXN:'MX$', BRL:'R$', NZD:'NZ$'
         };
+
+        // ── 从B端数据中提取实际配置的地区列表 ─────────────────
+        // B端地区代码大写（JP、UK、US、Others），收集代币和礼包中出现的地区
+        function getConfiguredRegions() {
+            const regionSet = new Set();
+            allCoins.forEach(c => { if (c.region) regionSet.add(c.region); });
+            allGifts.forEach(g => { if (g.region) regionSet.add(g.region); });
+            // 过滤掉 Others（单独处理），排序：非Others在前
+            const regions = Array.from(regionSet).filter(r => r !== 'Others');
+            // 始终加上 Others 兜底
+            regions.push('Others');
+            return regions;
+        }
 
         document.addEventListener('DOMContentLoaded', function() {
 
             // ── 站点Logo ──────────────────────────────────────
             if (siteInfo.gameLogo) {
                 document.querySelectorAll('.game-icon').forEach(el => { el.src = siteInfo.gameLogo; });
+            }
+
+            // ── 动态重建地区选择器 ────────────────────────────
+            // 用B端实际配置的地区替换硬编码的地区列表
+            const configuredRegions = getConfiguredRegions();
+            const regionDropdown = document.getElementById('regionDropdown');
+            const currentRegionEl = document.getElementById('currentRegion');
+            if (regionDropdown && configuredRegions.length > 0) {
+                regionDropdown.innerHTML = configuredRegions.map((regionCode, idx) => {
+                    const meta = REGION_META[regionCode] || { name: regionCode, flag: '🌐', lang: 'en', currency: 'USD', symbol: '$' };
+                    const isActive = idx === 0;
+                    return `<div class="region-item${isActive ? ' active' : ''}" onclick="__selectRegionDynamic('${regionCode}')">`
+                        + `<span>${meta.flag}</span><span>${meta.name}</span></div>`;
+                }).join('');
+
+                // 设置默认地区为第一个（非Others优先）
+                const firstRegion = configuredRegions[0];
+                const firstMeta = REGION_META[firstRegion] || { name: firstRegion, lang: 'en', currency: 'USD', symbol: '$' };
+                if (currentRegionEl) currentRegionEl.textContent = firstMeta.name;
+
+                // 同步修改原始 currentRegion / currentLang / currentCurrency / currentCurrencySymbol
+                if (typeof currentRegion !== 'undefined') {
+                    // 原HTML变量用小写，通过regionCurrencyMap访问；但我们直接覆盖selectRegion不依赖原map
+                    window.__bCurrentRegion = firstRegion;
+                    window.__bCurrentLang = firstMeta.lang;
+                }
             }
 
             // ── Banner（多语种：优先匹配当前语言，其次Others） ─
@@ -60,7 +128,9 @@
                         : `<img src="${imgSrc}" class="banner-image" style="width:100%;height:100%;object-fit:cover;">`;
                     bannerEl.innerHTML = inner;
                 };
-                window.__applyBanner(currentLang || 'zh-CN');
+                const initLang = (configuredRegions.length > 0 && REGION_META[configuredRegions[0]])
+                    ? REGION_META[configuredRegions[0]].lang : 'en';
+                window.__applyBanner(initLang);
             }
 
             // ── 通知栏（多语种） ──────────────────────────────
@@ -86,21 +156,23 @@
                         noticeTextEl.closest('.notice-bar').style.display = 'none';
                     }
                 };
-                window.__applyNotice(currentLang || 'zh-CN');
+                const initLang = (configuredRegions.length > 0 && REGION_META[configuredRegions[0]])
+                    ? REGION_META[configuredRegions[0]].lang : 'en';
+                window.__applyNotice(initLang);
             } else if (noticeTextEl) {
                 noticeTextEl.closest('.notice-bar').style.display = 'none';
             }
 
-            // ── 代币档位（按当前地区过滤，Others兜底） ────────
-            window.__dynamicCoins = allCoins;
-            window.__renderTiersDynamic = function(region, lang) {
+            // ── 代币档位（B端大写地区代码直接匹配，Others兜底） ─
+            window.__renderTiersDynamic = function(regionCode) {
                 const tierGrid = document.getElementById('tierGrid');
                 if (!tierGrid) return;
-                const regionCoins = allCoins.filter(c => c.region === region);
+                // B端存的就是大写代码，直接匹配
+                const regionCoins = allCoins.filter(c => c.region === regionCode);
                 const tiersToShow = regionCoins.length > 0 ? regionCoins
                     : allCoins.filter(c => c.region === 'Others' || !c.region);
 
-                if (tiersToShow.length === 0) return;
+                if (tiersToShow.length === 0) { tierGrid.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">暂无代币档位</div>'; return; }
 
                 const sym = currencySymbols[tiersToShow[0].localCurrency] || tiersToShow[0].localCurrency || '$';
                 tierGrid.innerHTML = tiersToShow.map((c, idx) => {
@@ -111,7 +183,7 @@
                         </div>` : '';
                     const hotBadge = c.isHighlight ? `<div class="tier-hot-badge">HOT</div>` : '';
                     return `
-                    <div class="tier-card${c.isHighlight ? ' highlight' : ''}" onclick="selectTierOverseasDynamic(${idx}, '${region}')">
+                    <div class="tier-card${c.isHighlight ? ' highlight' : ''}" data-tier-idx="${idx}">
                         ${hotBadge}
                         <div class="tier-content">
                             <div class="tier-left">
@@ -129,32 +201,32 @@
                     </div>`;
                 }).join('');
 
-                // 注入选档处理
                 window.__tiersForRegion = tiersToShow;
-                window.selectTierOverseasDynamic = function(idx, region) {
-                    const c = window.__tiersForRegion[idx];
-                    if (!c) return;
-                    if (!isLoggedIn) { document.getElementById('loginCard').scrollIntoView({behavior:'smooth'}); return; }
-                    document.querySelectorAll('.tier-card').forEach(el => el.classList.remove('selected'));
-                    event.currentTarget.classList.add('selected');
-                    selectedTierId = idx;
-                    const sym2 = currencySymbols[c.localCurrency] || '$';
-                    const price = c.localPrice ? c.localPrice / 100 : c.amount / 100;
-                    currentPrice = price;
-                    currentTokens = c.coinAmount;
-                    currentBonus = c.bonusAmount || 0;
-                    currentPoints = c.pointsAmount || 0;
-                    selectedPaymentMethod = c.paymentChannel || null;
-                    updateSummary();
-                    document.getElementById('paymentDrawer').classList.add('show');
-                };
+                tierGrid.querySelectorAll('.tier-card').forEach(function(el) {
+                    el.onclick = function() {
+                        const idx = parseInt(el.getAttribute('data-tier-idx'));
+                        const c = window.__tiersForRegion[idx];
+                        if (!c) return;
+                        if (!isLoggedIn) { document.getElementById('loginCard').scrollIntoView({behavior:'smooth'}); return; }
+                        document.querySelectorAll('.tier-card').forEach(function(e) { e.classList.remove('selected'); });
+                        el.classList.add('selected');
+                        selectedTierId = idx;
+                        currentPrice = c.localPrice ? c.localPrice / 100 : c.amount / 100;
+                        currentTokens = c.coinAmount;
+                        currentBonus = c.bonusAmount || 0;
+                        currentPoints = c.pointsAmount || 0;
+                        selectedPaymentMethod = c.paymentChannel || null;
+                        updateSummary();
+                        document.getElementById('paymentDrawer').classList.add('show');
+                    };
+                });
             };
 
-            // ── 礼包列表（按当前地区过滤，Others兜底） ────────
-            window.__renderGiftsDynamic = function(region, lang) {
+            // ── 礼包列表（B端大写地区代码直接匹配，Others兜底） ─
+            window.__renderGiftsDynamic = function(regionCode) {
                 const giftList = document.getElementById('giftPackageList');
                 if (!giftList) return;
-                const regionGifts = allGifts.filter(g => g.region === region);
+                const regionGifts = allGifts.filter(g => g.region === regionCode);
                 const giftsToShow = regionGifts.length > 0 ? regionGifts
                     : allGifts.filter(g => g.region === 'Others' || !g.region);
 
@@ -166,7 +238,7 @@
                     const origPrice = g.discountLocalPrice ? (g.discountLocalPrice / 100).toFixed(2) : null;
                     const origHtml = origPrice ? `<div class="gift-package-original-price">${sym}${origPrice}</div>` : '';
                     return `
-                    <div class="gift-package-card" onclick="selectGiftOverseasDynamic(${idx}, '${region}')">
+                    <div class="gift-package-card" data-gift-idx="${idx}">
                         <div class="gift-package-image">
                             <img src="${g.giftImage || 'libao.png'}" alt="${g.giftName}" style="width:100%;height:100%;object-fit:cover;">
                         </div>
@@ -184,41 +256,54 @@
                 }).join('');
 
                 window.__giftsForRegion = giftsToShow;
-                window.selectGiftOverseasDynamic = function(idx) {
-                    const g = window.__giftsForRegion[idx];
-                    if (!g) return;
-                    if (!isLoggedIn) { document.getElementById('loginCard').scrollIntoView({behavior:'smooth'}); return; }
-                    document.querySelectorAll('.gift-package-card').forEach(el => el.classList.remove('selected'));
-                    event.currentTarget.classList.add('selected');
-                    selectedGiftPackageId = idx;
-                    const sym2 = currencySymbols[g.localCurrency] || '$';
-                    currentPrice = g.localPrice ? g.localPrice / 100 : g.amount;
-                    currentTokens = 0;
-                    currentBonus = 0;
-                    currentPoints = g.pointsAmount || 0;
-                    updateSummary();
-                    document.getElementById('paymentDrawer').classList.add('show');
-                };
+                giftList.querySelectorAll('.gift-package-card').forEach(function(el) {
+                    el.onclick = function() {
+                        const idx = parseInt(el.getAttribute('data-gift-idx'));
+                        const g = window.__giftsForRegion[idx];
+                        if (!g) return;
+                        if (!isLoggedIn) { document.getElementById('loginCard').scrollIntoView({behavior:'smooth'}); return; }
+                        document.querySelectorAll('.gift-package-card').forEach(function(e) { e.classList.remove('selected'); });
+                        el.classList.add('selected');
+                        selectedGiftPackageId = idx;
+                        currentPrice = g.localPrice ? g.localPrice / 100 : g.amount;
+                        currentTokens = 0;
+                        currentBonus = 0;
+                        currentPoints = g.pointsAmount || 0;
+                        updateSummary();
+                        document.getElementById('paymentDrawer').classList.add('show');
+                    };
+                });
             };
 
-            // ── 挂钩原有 selectRegion，切换地区时重新渲染 ─────
-            const _origSelectRegion = window.selectRegion;
-            window.selectRegion = function(region, regionName, lang) {
-                if (_origSelectRegion) _origSelectRegion(region, regionName, lang);
-                // 延迟等原函数更新 currentRegion/currentLang
-                setTimeout(() => {
-                    window.__renderTiersDynamic(region, lang);
-                    window.__renderGiftsDynamic(region, lang);
-                    if (window.__applyBanner) window.__applyBanner(lang);
-                    if (window.__applyNotice) window.__applyNotice(lang);
-                }, 0);
+            // ── 动态地区切换（完全绕过原有selectRegion，自己处理） ──
+            window.__selectRegionDynamic = function(regionCode) {
+                const meta = REGION_META[regionCode] || { name: regionCode, flag: '🌐', lang: 'en', currency: 'USD', symbol: '$' };
+
+                // 更新显示
+                if (currentRegionEl) currentRegionEl.textContent = meta.name;
+                if (regionDropdown) regionDropdown.classList.remove('show');
+                document.querySelectorAll('.region-item').forEach(function(el) { el.classList.remove('active'); });
+                // 标记active
+                document.querySelectorAll('.region-item').forEach(function(el) {
+                    if (el.textContent.trim().indexOf(meta.name) !== -1) el.classList.add('active');
+                });
+
+                // 更新原始变量（尽量兼容原有代码）
+                window.__bCurrentRegion = regionCode;
+                window.__bCurrentLang = meta.lang;
+
+                // 渲染内容
+                window.__renderTiersDynamic(regionCode);
+                window.__renderGiftsDynamic(regionCode);
+                if (window.__applyBanner) window.__applyBanner(meta.lang);
+                if (window.__applyNotice) window.__applyNotice(meta.lang);
             };
 
-            // ── 首次渲染（默认地区）────────────────────────────
-            const defaultRegion = currentRegion || 'cn';
-            const defaultLang   = currentLang || 'zh-CN';
-            window.__renderTiersDynamic(defaultRegion, defaultLang);
-            window.__renderGiftsDynamic(defaultRegion, defaultLang);
+            // ── 首次渲染（默认第一个B端地区）────────────────────
+            if (configuredRegions.length > 0) {
+                window.__renderTiersDynamic(configuredRegions[0]);
+                window.__renderGiftsDynamic(configuredRegions[0]);
+            }
 
         }); // end DOMContentLoaded
     })();
