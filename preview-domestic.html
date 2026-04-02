@@ -1,0 +1,4630 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>游戏充值中心 - 国内版</title>
+    <!-- B端数据适配层：从localStorage读取B端配置，渲染真实数据 -->
+    <script>
+    (function() {
+        const p = new URLSearchParams(location.search);
+        const SITE = p.get('site') || '';
+
+        // ── 工具函数 ──────────────────────────────────────────
+        function ls(key) {
+            try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) { return []; }
+        }
+        function lsObj(key) {
+            try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch(e) { return null; }
+        }
+
+        // ── 读取B端配置 ───────────────────────────────────────
+        const siteList   = ls('site_config_data');
+        const siteInfo   = siteList.find(s => s.name === SITE) || {};
+        const coins      = ls('coin_config_data').filter(c => c.siteName === SITE && c.status === 2);
+        const gifts      = ls('gift_config_data').filter(g => g.siteName === SITE && g.giftStatus === 2 && g.enabled !== false);
+        const banners    = ls('banner_config_data').filter(b => b.siteName === SITE && b.status === 2);
+        const notices    = ls('notification_config_data').filter(n => n.siteName === SITE && n.status === 2);
+
+        // ── 更新页面标题 ───────────────────────────────────────
+        if (siteInfo.pageTitle) document.title = siteInfo.pageTitle;
+
+        // ── DOMContentLoaded 后执行渲染 ───────────────────────
+        document.addEventListener('DOMContentLoaded', function() {
+
+            // ── 站点Logo ──────────────────────────────────────
+            if (siteInfo.gameLogo) {
+                const logos = document.querySelectorAll('.game-icon');
+                logos.forEach(el => { el.src = siteInfo.gameLogo; });
+            }
+
+            // ── Banner ────────────────────────────────────────
+            const bannerEl = document.querySelector('.banner');
+            if (bannerEl && banners.length > 0) {
+                const now = Date.now();
+                const activeBanners = banners.filter(b => {
+                    if (!b.effectiveTime) return true;
+                    const [s, e] = b.effectiveTime.split('~').map(t => new Date(t.trim()).getTime());
+                    return now >= s && now <= e;
+                });
+                if (activeBanners.length > 0) {
+                    // 多张Banner支持轮播
+                    const imgs = activeBanners.map((b, i) => `
+                        <div class="banner-slide" style="display:${i===0?'block':'none'}; width:100%; height:100%; position:absolute; top:0; left:0;">
+                            ${b.jumpUrl
+                                ? `<a href="${b.jumpUrl}" target="_blank"><img src="${b.bannerImage||'banner.jpg'}" style="width:100%;height:100%;object-fit:cover;"></a>`
+                                : `<img src="${b.bannerImage||'banner.jpg'}" style="width:100%;height:100%;object-fit:cover;">`
+                            }
+                        </div>`).join('');
+                    const dots = activeBanners.length > 1 ? `
+                        <div class="banner-dots">
+                            ${activeBanners.map((_,i) => `<div class="banner-dot ${i===0?'active':''}"></div>`).join('')}
+                        </div>` : '';
+                    bannerEl.style.position = 'relative';
+                    bannerEl.innerHTML = imgs + dots;
+                    // 自动轮播
+                    if (activeBanners.length > 1) {
+                        let cur = 0;
+                        setInterval(() => {
+                            const slides = bannerEl.querySelectorAll('.banner-slide');
+                            const dotsEl = bannerEl.querySelectorAll('.banner-dot');
+                            slides[cur].style.display = 'none';
+                            dotsEl[cur] && dotsEl[cur].classList.remove('active');
+                            cur = (cur + 1) % slides.length;
+                            slides[cur].style.display = 'block';
+                            dotsEl[cur] && dotsEl[cur].classList.add('active');
+                        }, 3000);
+                    }
+                }
+            }
+
+            // ── 通知栏 ────────────────────────────────────────
+            const noticeBar = document.getElementById('noticeBar');
+            if (noticeBar && notices.length > 0) {
+                const now = Date.now();
+                const activeNotice = notices.find(n => {
+                    if (!n.effectiveTime) return true;
+                    const [s, e] = n.effectiveTime.split('~').map(t => new Date(t.trim()).getTime());
+                    return now >= s && now <= e;
+                });
+                if (activeNotice) {
+                    const linkHtml = (activeNotice.linkText && activeNotice.linkUrl)
+                        ? ` <a href="${activeNotice.linkUrl}" target="_blank" style="color:#fa8c16;text-decoration:underline;">${activeNotice.linkText}</a>`
+                        : '';
+                    noticeBar.querySelector('.notice-text').innerHTML = (activeNotice.content || '') + linkHtml;
+                    noticeBar.style.display = 'flex';
+                } else {
+                    noticeBar.style.display = 'none';
+                }
+            } else if (noticeBar && notices.length === 0) {
+                noticeBar.style.display = 'none';
+            }
+
+            // ── 代币档位 ──────────────────────────────────────
+            const tierTab = document.getElementById('tier-tab');
+            if (tierTab && coins.length > 0) {
+                // 区分固定档位和自定义档位
+                const fixedCoins = coins.filter(c => !c.coinType || c.coinType === 'fixed');
+                const customCoins = coins.filter(c => c.coinType === 'custom');
+
+                if (fixedCoins.length > 0) {
+                    const tierGrid = tierTab.querySelector('.tier-grid');
+                    if (tierGrid) {
+                        tierGrid.innerHTML = fixedCoins.map((c, idx) => {
+                            const price = (c.amount / 100).toFixed(0);
+                            const bonusHtml = c.bonusAmount > 0
+                                ? `<div class="tier-bonus-group"><span class="tier-plus">+</span><div class="tier-bonus-icon"><img src="daibi.png" alt="" class="tier-bonus-icon"></div><div class="tier-bonus">${c.bonusAmount}</div></div>`
+                                : '';
+                            const pointsHtml = c.amount > 0
+                                ? `<div class="tier-points-top">赠送${c.amount}积分</div>`
+                                : '';
+                            return `
+                            <div class="tier-card" onclick="selectTierDynamic(${idx})">
+                                ${pointsHtml}
+                                <div class="tier-content">
+                                    <div class="tier-token-group">
+                                        <img src="daibi.png" alt="代币" class="tier-main-icon">
+                                        <div class="tier-amount">${c.coinAmount}</div>
+                                    </div>
+                                    ${bonusHtml}
+                                </div>
+                                <div class="tier-price-bottom">¥${price}</div>
+                            </div>`;
+                        }).join('');
+                    }
+                }
+
+                // 注入动态选档函数（替换硬编码的 selectTier）
+                window.__dynamicTiers = fixedCoins;
+                window.selectTierDynamic = function(idx) {
+                    const c = window.__dynamicTiers[idx];
+                    if (!c) return;
+                    if (!currentRoleId) { showModal('loginModal'); return; }
+                    document.querySelectorAll('.tier-card').forEach(el => el.classList.remove('selected'));
+                    event.currentTarget.classList.add('selected');
+                    selectedType = 'tier';
+                    selectedId = idx;
+                    const price = c.amount / 100;
+                    updateOrderSummary(`${c.coinAmount}代币`, price, c.coinAmount, c.bonusAmount || 0);
+                    showDrawer();
+                };
+            }
+
+            // ── 礼包列表 ──────────────────────────────────────
+            const giftTab = document.getElementById('gift-tab');
+            if (giftTab && gifts.length > 0) {
+                window.__dynamicGifts = gifts;
+                giftTab.innerHTML = gifts.map((g, idx) => {
+                    const price = g.amount;
+                    const timeStr = g.activityTime || '';
+                    return `
+                    <div class="gift-card" onclick="selectGiftDynamic(${idx})">
+                        <div class="gift-main">
+                            <div class="gift-left">
+                                <img src="${g.giftImage || 'libao.png'}" alt="${g.giftName}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;">
+                            </div>
+                            <div class="gift-middle">
+                                <div class="gift-name">${g.giftName}</div>
+                                <div class="gift-price">¥${price}</div>
+                                <div class="gift-limit">限购${g.limitCount}次（${g.limitType === 'total' ? '总计' : g.limitType === 'daily' ? '每天' : '每周'}）</div>
+                                <div class="gift-time">${timeStr}</div>
+                            </div>
+                            <div class="gift-right">
+                                <button class="gift-buy-btn" onclick="event.stopPropagation();selectGiftDynamic(${idx})">购买</button>
+                            </div>
+                        </div>
+                        <div class="gift-bottom">
+                            <div class="gift-desc">${g.content || ''}</div>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                window.selectGiftDynamic = function(idx) {
+                    const g = window.__dynamicGifts[idx];
+                    if (!g) return;
+                    if (!currentRoleId) { showModal('loginModal'); return; }
+                    document.querySelectorAll('.tier-card, .gift-card').forEach(el => el.classList.remove('selected'));
+                    const cards = document.querySelectorAll('.gift-card');
+                    if (cards[idx]) cards[idx].classList.add('selected');
+                    selectedType = 'gift';
+                    selectedId = idx;
+                    updateOrderSummary(g.giftName, g.amount, 0, 0, g.amount * 100, g.content || '');
+                    showDrawer();
+                };
+            }
+
+        }); // end DOMContentLoaded
+    })();
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            padding-top: 60px;
+            padding-bottom: 80px;
+            max-width: 480px;
+            margin: 0 auto;
+        }
+
+        .header {
+            position: fixed;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 480px;
+            width: 100%;
+            background: white;
+            padding: 12px 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .game-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            object-fit: cover;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .add-to-home-btn {
+            padding: 6px 10px;
+            background: #52c41a;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-btn-header {
+            padding: 6px 16px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s;
+        }
+
+        .user-info {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+        }
+
+        .user-info.show {
+            display: flex;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .user-dropdown {
+            display: none;
+            position: absolute;
+            top: 40px;
+            right: 0;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            min-width: 150px;
+            z-index: 100;
+        }
+
+        .user-dropdown.show {
+            display: block;
+        }
+
+        .dropdown-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #333;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background 0.2s;
+        }
+
+        .dropdown-item:last-child {
+            border-bottom: none;
+        }
+
+        .dropdown-item:hover {
+            background: #f5f5f5;
+        }
+
+        .role-info {
+            background: #e6f7ff;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .role-info.show {
+            display: flex;
+        }
+
+        .role-details {
+            flex: 1;
+        }
+
+        .role-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .role-server {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .role-points {
+            font-size: 12px;
+            color: #ff6b00;
+            font-weight: 600;
+        }
+
+
+        .change-role-btn {
+            padding: 6px 12px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .banner {
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            overflow: hidden;
+            height: 180px;
+            position: relative;
+        }
+
+        .banner-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .banner-dots {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 6px;
+        }
+
+        .banner-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.5);
+            cursor: pointer;
+        }
+
+        .banner-dot.active {
+            background: white;
+            width: 24px;
+            border-radius: 4px;
+        }
+
+        .notice-bar {
+            background: #fff7e6;
+            border-left: 3px solid #faad14;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .notice-icon {
+            font-size: 16px;
+        }
+
+        .notice-text {
+            flex: 1;
+            color: #ad6800;
+        }
+
+        .close-notice {
+            cursor: pointer;
+            font-size: 16px;
+            color: #ad6800;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .tab-nav {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .tab-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.3s;
+        }
+
+        .tab-item.active {
+            color: #1890ff;
+            border-bottom-color: #1890ff;
+            font-weight: 600;
+        }
+
+        .tier-icon-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .tier-icon {
+            width: 28px;
+            height: 28px;
+            flex-shrink: 0;
+        }
+
+        .tier-points {
+            font-size: 10px;
+            color: #fa8c16;
+            margin-top: 2px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .recharge-tab-nav {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .recharge-tab-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .recharge-tab-item.active {
+            color: #1890ff;
+            border-bottom-color: #1890ff;
+            font-weight: 600;
+        }
+
+        .recharge-tab-content {
+            display: none;
+        }
+
+        .recharge-tab-content.active {
+            display: block;
+        }
+
+        .tier-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .tier-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px 8px 12px 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: white;
+        }
+
+        .tier-card.selected {
+            border-color: #1890ff;
+            background: #f0f7ff;
+        }
+
+        .tier-points-top {
+            position: absolute;
+            top: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: #ff6b00;
+            background: white;
+            border: 1px solid #ff6b00;
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-weight: 500;
+            white-space: nowrap;
+            z-index: 1;
+        }
+
+        .tier-content {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            width: 100%;
+        }
+
+        .tier-token-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .tier-main-icon {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 4px;
+        }
+
+        .tier-amount {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .tier-plus {
+            font-size: 20px;
+            color: #999;
+            font-weight: normal;
+        }
+
+        .tier-bonus-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .tier-bonus-icon {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 4px;
+        }
+
+        .tier-bonus {
+            font-size: 16px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .tier-price-bottom {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            text-align: center;
+        }
+
+        .gift-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .gift-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .gift-card.selected {
+            border-color: #1890ff;
+            background: #f0f7ff;
+        }
+
+        .gift-points-badge {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            border: 1px solid #e0e0e0;
+            background: white;
+            color: #666;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+        }
+
+        .gift-main {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .gift-left {
+            width: 80px;
+            height: 80px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f5f5f5;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .gift-left img {
+            width: 60px;
+            height: 60px;
+            object-fit: contain;
+        }
+
+        .gift-middle {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .gift-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .gift-price {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .gift-limit {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .gift-time {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .gift-right {
+            display: flex;
+            align-items: center;
+            padding-left: 12px;
+        }
+
+        .gift-buy-btn {
+            padding: 8px 16px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .gift-bottom {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .gift-desc {
+            font-size: 11px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .points-mall-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .points-mall-tabs {
+            display: flex;
+            gap: 8px;
+        }
+
+        .points-mall-tab {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #666;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+
+        .points-mall-tab.active {
+            color: #1890ff;
+            border-color: #1890ff;
+            background: #e6f7ff;
+            font-weight: 600;
+        }
+
+        .rules-btn {
+            padding: 8px 16px;
+            background: #52c41a;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .points-mall-content {
+            display: none;
+        }
+
+        .points-mall-content.active {
+            display: block;
+        }
+
+        .pool-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .pool-tab {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .pool-tab.active {
+            color: #1890ff;
+            border-bottom-color: #1890ff;
+            font-weight: 600;
+        }
+
+        .pool-content {
+            display: none;
+        }
+
+        .pool-content.active {
+            display: block;
+        }
+
+        .mall-item-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            transition: all 0.3s;
+        }
+
+        .mall-item-card:hover {
+            border-color: #1890ff;
+            box-shadow: 0 2px 8px rgba(24, 144, 255, 0.2);
+        }
+
+        .mall-item-main {
+            display: flex;
+            gap: 12px;
+        }
+
+        .mall-item-left {
+            width: 80px;
+            height: 80px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f5f5f5;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .mall-item-left img {
+            width: 60px;
+            height: 60px;
+            object-fit: contain;
+        }
+
+        .mall-item-middle {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .mall-item-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .mall-item-points {
+            font-size: 16px;
+            font-weight: bold;
+            color: #ff6b00;
+        }
+
+        .mall-item-stock {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .mall-item-limit {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .mall-item-right {
+            display: flex;
+            align-items: center;
+            padding-left: 12px;
+        }
+
+        .mall-exchange-btn {
+            padding: 8px 16px;
+            background: #52c41a;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .mall-exchange-btn:disabled {
+            background: #d9d9d9;
+            cursor: not-allowed;
+        }
+
+        .mall-item-bottom {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .mall-item-desc {
+            font-size: 11px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .exchange-record-item {
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            background: #fafafa;
+        }
+
+        .exchange-record-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .exchange-record-time {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .exchange-record-status {
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .exchange-record-status.success {
+            color: #52c41a;
+        }
+
+        .exchange-record-status.pending {
+            color: #faad14;
+        }
+
+        .exchange-record-body {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .exchange-record-activity {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .exchange-record-points {
+            color: #ff6b00;
+            font-weight: 600;
+        }
+
+        .activity-tab-nav {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .activity-tab-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .activity-tab-item.active {
+            color: #1890ff;
+            border-bottom-color: #1890ff;
+            font-weight: 600;
+        }
+
+        .activity-tab-content {
+            display: none;
+        }
+
+        .activity-tab-content.active {
+            display: block;
+        }
+
+        /* 转盘样式 */
+        .wheel-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .wheel-broadcast {
+            width: 100%;
+            background: #fff7e6;
+            border: 1px solid #faad14;
+            border-radius: 6px;
+            padding: 8px 12px;
+            margin-bottom: 15px;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .broadcast-content {
+            display: inline-block;
+            font-size: 12px;
+            color: #ad6800;
+            animation: scroll-left 20s linear infinite;
+        }
+
+        @keyframes scroll-left {
+            0% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+        }
+
+        .wheel-info {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .wheel-time {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .wheel-cost {
+            font-size: 14px;
+            color: #ff6b00;
+            font-weight: 600;
+        }
+
+        .wheel-wrapper {
+            position: relative;
+            width: 280px;
+            height: 280px;
+            margin: 20px auto;
+        }
+
+        .wheel {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 8px solid #faad14;
+            background: #fff;
+            position: relative;
+            transition: transform 3s cubic-bezier(0.25, 0.1, 0.25, 1);
+            overflow: hidden;
+        }
+
+        .wheel-divider {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100%;
+            height: 1px;
+            background: #d0d0d0;
+            transform-origin: center;
+        }
+
+        .wheel-divider:nth-of-type(1) { transform: translate(-50%, -50%) rotate(0deg); }
+        .wheel-divider:nth-of-type(2) { transform: translate(-50%, -50%) rotate(45deg); }
+        .wheel-divider:nth-of-type(3) { transform: translate(-50%, -50%) rotate(90deg); }
+        .wheel-divider:nth-of-type(4) { transform: translate(-50%, -50%) rotate(135deg); }
+
+        .wheel.spinning {
+            transition: transform 3s cubic-bezier(0.25, 0.1, 0.25, 1);
+        }
+
+        .wheel-item {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 25px;
+        }
+
+        .wheel-item:nth-child(5) { transform: rotate(0deg); }
+        .wheel-item:nth-child(6) { transform: rotate(45deg); }
+        .wheel-item:nth-child(7) { transform: rotate(90deg); }
+        .wheel-item:nth-child(8) { transform: rotate(135deg); }
+        .wheel-item:nth-child(9) { transform: rotate(180deg); }
+        .wheel-item:nth-child(10) { transform: rotate(225deg); }
+        .wheel-item:nth-child(11) { transform: rotate(270deg); }
+        .wheel-item:nth-child(12) { transform: rotate(315deg); }
+
+        .wheel-item-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            width: 50px;
+        }
+
+        .wheel-item:nth-child(5) .wheel-item-content { transform: rotate(0deg); }
+        .wheel-item:nth-child(6) .wheel-item-content { transform: rotate(-45deg); }
+        .wheel-item:nth-child(7) .wheel-item-content { transform: rotate(-90deg); }
+        .wheel-item:nth-child(8) .wheel-item-content { transform: rotate(-135deg); }
+        .wheel-item:nth-child(9) .wheel-item-content { transform: rotate(-180deg); }
+        .wheel-item:nth-child(10) .wheel-item-content { transform: rotate(-225deg); }
+        .wheel-item:nth-child(11) .wheel-item-content { transform: rotate(-270deg); }
+        .wheel-item:nth-child(12) .wheel-item-content { transform: rotate(-315deg); }
+
+        .wheel-item-icon {
+            width: 40px;
+            height: 40px;
+        }
+
+        .wheel-item-name {
+            font-size: 11px;
+            color: #333;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .wheel-item-count {
+            font-size: 10px;
+            color: #666;
+        }
+
+        .wheel-pointer {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-top: 25px solid #ff6b00;
+            z-index: 10;
+            filter: drop-shadow(0 2px 4px rgba(255, 107, 0, 0.4));
+        }
+
+        .wheel-center-btn {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #ff6b00 0%, #ff8c00 100%);
+            border-radius: 50%;
+            border: 4px solid white;
+            box-shadow: 0 4px 12px rgba(255, 107, 0, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            z-index: 10;
+            cursor: pointer;
+        }
+
+        .wheel-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            align-items: flex-start;
+        }
+
+        .wheel-btn-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .wheel-btn {
+            width: 100%;
+            height: 44px;
+            padding: 0 10px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+        }
+
+        .wheel-btn-free {
+            background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(82, 196, 26, 0.3);
+        }
+
+        .wheel-btn-free:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(82, 196, 26, 0.4);
+        }
+
+        .wheel-btn-ten {
+            background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+        }
+
+        .wheel-btn-ten:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(24, 144, 255, 0.4);
+        }
+
+        .wheel-btn:disabled {
+            background: #d9d9d9;
+            color: #999;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .wheel-btn-info {
+            font-size: 11px;
+            color: #666;
+            margin-top: 5px;
+            text-align: center;
+        }
+
+        /* 充值送头像框样式 */
+        .avatar-reward-container {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .avatar-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+            background: linear-gradient(135deg, #ff6b00 0%, #ff8c00 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .avatar-desc {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.8;
+            margin-bottom: 20px;
+        }
+
+        .avatar-image-wrapper {
+            width: 200px;
+            height: 200px;
+            margin: 20px auto;
+            border: 3px solid #faad14;
+            border-radius: 12px;
+            padding: 20px;
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .avatar-image {
+            width: 150px;
+            height: 150px;
+            border-radius: 8px;
+        }
+
+        .avatar-claim-btn {
+            width: 80%;
+            max-width: 300px;
+            padding: 14px;
+            background: linear-gradient(135deg, #ff6b00 0%, #ff8c00 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 20px auto;
+            display: block;
+            box-shadow: 0 4px 12px rgba(255, 107, 0, 0.3);
+            transition: all 0.3s;
+        }
+
+        .avatar-claim-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(255, 107, 0, 0.4);
+        }
+
+        .avatar-claim-btn:disabled {
+            background: #d9d9d9;
+            color: #999;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .avatar-rules {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            text-align: left;
+        }
+
+        .avatar-rules-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .avatar-rules-content {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.8;
+        }
+
+        .avatar-rules-content li {
+            margin-bottom: 8px;
+        }
+
+        /* 累充活动样式 */
+        .cumulative-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .cumulative-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .cumulative-card.completed {
+            border-color: #52c41a;
+            background: #f6ffed;
+        }
+
+        .cumulative-card.available {
+            border-color: #1890ff;
+            background: #e6f7ff;
+        }
+
+        .cumulative-main {
+            display: flex;
+            gap: 12px;
+        }
+
+        .cumulative-left {
+            width: 80px;
+            height: 80px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f5f5f5;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .cumulative-left img {
+            width: 60px;
+            height: 60px;
+            object-fit: contain;
+        }
+
+        .cumulative-middle {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .cumulative-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .cumulative-condition {
+            font-size: 12px;
+            color: #ff6b00;
+            font-weight: 600;
+        }
+
+        .cumulative-time {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .cumulative-right {
+            display: flex;
+            align-items: center;
+            padding-left: 12px;
+        }
+
+        .cumulative-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.3s;
+        }
+
+        .cumulative-btn-claim {
+            background: #52c41a;
+            color: white;
+        }
+
+        .cumulative-btn-recharge {
+            background: #1890ff;
+            color: white;
+        }
+
+        .cumulative-btn-claimed {
+            background: #d9d9d9;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        .cumulative-bottom {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .cumulative-desc {
+            font-size: 11px;
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .cumulative-progress {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .cumulative-progress-label {
+            font-size: 12px;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .cumulative-progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .cumulative-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #52c41a 0%, #73d13d 100%);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+
+        .modal-content-text {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.8;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .modal-content-text h3 {
+            font-size: 16px;
+            color: #333;
+            margin: 20px 0 10px 0;
+            font-weight: 600;
+        }
+
+        .modal-content-text h3:first-child {
+            margin-top: 0;
+        }
+
+        .modal-content-text p {
+            margin-bottom: 10px;
+        }
+
+        .modal-content-text ul {
+            padding-left: 20px;
+            margin-bottom: 10px;
+        }
+
+        .modal-content-text li {
+            margin-bottom: 8px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-box {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            width: 90%;
+            max-width: 360px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            font-size: 24px;
+            color: #999;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #1890ff;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #1890ff;
+            color: white;
+        }
+
+        .role-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .role-item {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .role-item.selected {
+            border-color: #1890ff;
+            background: #e6f7ff;
+        }
+
+        .role-item-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .role-item-server {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .order-drawer {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(100%);
+            max-width: 480px;
+            width: 100%;
+            background: white;
+            border-radius: 16px 16px 0 0;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+            z-index: 999;
+            transition: transform 0.3s ease;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .order-drawer.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .drawer-handle {
+            width: 40px;
+            height: 4px;
+            background: #d9d9d9;
+            border-radius: 2px;
+            margin: 12px auto;
+        }
+
+        .drawer-content {
+            padding: 0 20px 20px;
+        }
+
+        .drawer-close {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 24px;
+            color: #999;
+            cursor: pointer;
+            background: none;
+            border: none;
+        }
+
+        .summary-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .summary-label {
+            color: #666;
+        }
+
+        .summary-value {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .quantity-control {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .quantity-label {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .quantity-selector {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .quantity-btn {
+            width: 32px;
+            height: 32px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            background: white;
+            color: #333;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .quantity-btn:hover {
+            border-color: #1890ff;
+            color: #1890ff;
+        }
+
+        .quantity-btn:disabled {
+            background: #f5f5f5;
+            color: #d9d9d9;
+            cursor: not-allowed;
+            border-color: #e0e0e0;
+        }
+
+        .quantity-input {
+            width: 60px;
+            height: 32px;
+            text-align: center;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .quantity-input:focus {
+            outline: none;
+            border-color: #1890ff;
+        }
+
+        .payment-methods {
+            margin-bottom: 15px;
+        }
+
+        .payment-method-label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .payment-options {
+            display: flex;
+            gap: 10px;
+        }
+
+        .payment-option {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            font-size: 13px;
+        }
+
+        .payment-option.selected {
+            border-color: #1890ff;
+            background: #e6f7ff;
+            color: #1890ff;
+            font-weight: 600;
+        }
+
+        .payment-icon {
+            margin-bottom: 5px;
+        }
+
+        .summary-divider {
+            height: 1px;
+            background: #e0e0e0;
+            margin: 15px 0;
+        }
+
+        .summary-total {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            font-size: 16px;
+        }
+
+        .total-label {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .total-value {
+            color: #ff4d4f;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .history-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .history-product {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .history-amount {
+            font-size: 14px;
+            font-weight: 600;
+            color: #ff4d4f;
+        }
+
+        .history-info {
+            font-size: 12px;
+            color: #999;
+            line-height: 1.6;
+        }
+
+        .footer-info {
+            background: white;
+            border-radius: 8px;
+            padding: 20px 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: none;
+        }
+
+        .footer-info.show {
+            display: block;
+        }
+
+        .footer-section {
+            margin-bottom: 20px;
+        }
+
+        .footer-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .footer-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .footer-content {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.8;
+        }
+
+        .footer-content p {
+            margin-bottom: 8px;
+        }
+
+        .footer-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .footer-highlight {
+            color: #1890ff;
+            font-weight: 500;
+        }
+
+        /* 角色选择抽屉样式 */
+        .role-drawer {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(100%);
+            max-width: 480px;
+            width: 100%;
+            background: white;
+            border-radius: 16px 16px 0 0;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+            z-index: 1001;
+            transition: transform 0.3s ease;
+        }
+
+        .role-drawer.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .role-drawer-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .role-drawer-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .role-drawer-close {
+            font-size: 24px;
+            color: #999;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .role-drawer-content {
+            display: flex;
+            flex-direction: row;
+            height: 400px;
+        }
+
+        .server-carousel {
+            width: 40%;
+            border-right: 1px solid #f0f0f0;
+            overflow-y: auto;
+            padding: 15px 10px;
+        }
+
+        .server-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .server-item {
+            padding: 15px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.3s;
+            cursor: pointer;
+            text-align: center;
+            border: 2px solid transparent;
+        }
+
+        .server-item:not(.active) {
+            opacity: 0.5;
+        }
+
+        .server-item.active {
+            opacity: 1;
+            color: #1890ff;
+            background: #e6f7ff;
+            border-color: #1890ff;
+            font-weight: 600;
+        }
+
+        .server-dots {
+            display: none;
+        }
+
+        .server-dot {
+            display: none;
+        }
+
+        .character-list {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 15px;
+            overflow-y: auto;
+        }
+
+        .character-item {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .character-item:hover {
+            border-color: #1890ff;
+            background: #f0f7ff;
+        }
+
+        .character-item.selected {
+            border-color: #1890ff;
+            background: #e6f7ff;
+        }
+
+        .character-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .character-level {
+            font-size: 12px;
+            color: #999;
+        }
+
+        /* 登录方式切换样式 */
+        .login-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .login-tab {
+            flex: 1;
+            padding: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .login-tab.active {
+            color: #1890ff;
+            border-bottom-color: #1890ff;
+            font-weight: 600;
+        }
+
+        .login-form-content {
+            display: none;
+        }
+
+        .login-form-content.active {
+            display: block;
+        }
+
+        .btn-default {
+            background: #f5f5f5;
+            color: #666;
+            border: 1px solid #d9d9d9;
+        }
+
+        .btn-default:disabled {
+            background: #f5f5f5;
+            color: #d9d9d9;
+            cursor: not-allowed;
+        }
+
+        /* 协议勾选样式 */
+        .agreement-section {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .agreement-checkbox {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 13px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .agreement-checkbox input[type="checkbox"] {
+            margin-top: 3px;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .agreement-text {
+            flex: 1;
+        }
+
+        .agreement-link {
+            color: #1890ff;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .agreement-link:hover {
+            text-decoration: underline;
+        }
+
+        /* 礼包详情弹窗样式 */
+        .gift-detail-modal .modal-box {
+            max-width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .gift-detail-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .gift-detail-image {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            background: #f5f5f5;
+        }
+
+        .gift-detail-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .gift-detail-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .gift-detail-price {
+            font-size: 20px;
+            font-weight: bold;
+            color: #ff4d4f;
+            margin-bottom: 5px;
+        }
+
+        .gift-detail-time {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .gift-items-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .gift-items-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .gift-item-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            background: #fafafa;
+            transition: all 0.3s;
+        }
+
+        .gift-item-card:hover {
+            border-color: #1890ff;
+            background: #f0f7ff;
+            transform: translateY(-2px);
+        }
+
+        .gift-item-image {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 8px;
+            border-radius: 6px;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #e0e0e0;
+        }
+
+        .gift-item-image img {
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
+        }
+
+        .gift-item-name {
+            font-size: 13px;
+            color: #333;
+            font-weight: 500;
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+
+        .gift-item-count {
+            font-size: 12px;
+            color: #1890ff;
+            font-weight: 600;
+        }
+
+        .gift-detail-buy-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+        }
+
+        .gift-detail-buy-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(24, 144, 255, 0.4);
+        }
+
+        /* 账号列表样式 */
+        .account-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .account-item {
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .account-item:hover {
+            border-color: #1890ff;
+            background: #f0f7ff;
+        }
+
+        .account-item-info {
+            flex: 1;
+        }
+
+        .account-item-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .account-item-id {
+            font-size: 13px;
+            color: #999;
+        }
+
+        .account-item-arrow {
+            font-size: 18px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <!-- 登录弹窗 -->
+    <div class="modal" id="loginModal">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeModal('loginModal')">✕</button>
+            <h2 class="modal-title">账号登录</h2>
+            
+            <!-- 登录方式切换 -->
+            <div class="login-tabs">
+                <div class="login-tab active" onclick="switchLoginTab('phone')">手机号登录</div>
+                <div class="login-tab" onclick="switchLoginTab('account')">账密登录</div>
+                <div class="login-tab" onclick="switchLoginTab('roleid')">角色ID验证</div>
+            </div>
+
+            <!-- 手机号登录 -->
+            <form id="phoneLoginForm" class="login-form-content active" onsubmit="handlePhoneLogin(event)">
+                <div class="form-group">
+                    <label class="form-label">手机号</label>
+                    <input type="tel" id="phoneInput" class="form-input" placeholder="请输入手机号" maxlength="11" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">验证码</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="verifyCodeInput" class="form-input" placeholder="请输入验证码" maxlength="6" required style="flex: 1;">
+                        <button type="button" class="btn btn-default" id="sendCodeBtn" onclick="sendVerifyCode()" style="width: 100px; padding: 12px 10px; font-size: 13px;">发送验证码</button>
+                    </div>
+                </div>
+                
+                <!-- 协议勾选 -->
+                <div class="agreement-section">
+                    <div class="agreement-checkbox">
+                        <input type="checkbox" id="phoneAgreementCheckbox" required>
+                        <div class="agreement-text">
+                            我已阅读并同意
+                            <a class="agreement-link" onclick="showAgreementModal('user')">《用户协议》</a>、
+                            <a class="agreement-link" onclick="showAgreementModal('privacy')">《隐私政策》</a>和
+                            <a class="agreement-link" onclick="showAgreementModal('child')">《儿童隐私政策》</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">验证登录</button>
+            </form>
+
+            <!-- 账密登录 -->
+            <form id="accountLoginForm" class="login-form-content" onsubmit="handleAccountLogin(event)">
+                <div class="form-group">
+                    <label class="form-label">账号</label>
+                    <input type="text" id="accountInput" class="form-input" placeholder="请输入账号" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">密码</label>
+                    <input type="password" id="passwordInput" class="form-input" placeholder="请输入密码" required>
+                </div>
+                
+                <!-- 协议勾选 -->
+                <div class="agreement-section">
+                    <div class="agreement-checkbox">
+                        <input type="checkbox" id="accountAgreementCheckbox" required>
+                        <div class="agreement-text">
+                            我已阅读并同意
+                            <a class="agreement-link" onclick="showAgreementModal('user')">《用户协议》</a>、
+                            <a class="agreement-link" onclick="showAgreementModal('privacy')">《隐私政策》</a>和
+                            <a class="agreement-link" onclick="showAgreementModal('child')">《儿童隐私政策》</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">登录</button>
+            </form>
+
+            <!-- 角色ID验证 -->
+            <form id="roleIdLoginForm" class="login-form-content" onsubmit="handleRoleIdLogin(event)">
+                <div class="form-group">
+                    <label class="form-label">角色ID</label>
+                    <input type="text" id="roleIdInput" class="form-input" placeholder="请输入角色ID" required>
+                </div>
+                
+                <!-- 协议勾选 -->
+                <div class="agreement-section">
+                    <div class="agreement-checkbox">
+                        <input type="checkbox" id="roleIdAgreementCheckbox" required>
+                        <div class="agreement-text">
+                            我已阅读并同意
+                            <a class="agreement-link" onclick="showAgreementModal('user')">《用户协议》</a>、
+                            <a class="agreement-link" onclick="showAgreementModal('privacy')">《隐私政策》</a>和
+                            <a class="agreement-link" onclick="showAgreementModal('child')">《儿童隐私政策》</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">验证登录</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 账号选择弹窗（手机号登录后） -->
+    <div class="modal" id="accountSelectModal">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeModal('accountSelectModal')">✕</button>
+            <h2 class="modal-title">选择账号</h2>
+            <div class="account-list" id="accountList">
+                <!-- 账号列表将动态生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 角色选择抽屉 -->
+    <div class="role-drawer" id="roleDrawer">
+        <div class="role-drawer-header">
+            <div class="role-drawer-title">选择角色</div>
+            <button class="role-drawer-close" onclick="closeRoleDrawer()">✕</button>
+        </div>
+        <div class="role-drawer-content">
+            <div class="server-carousel" id="serverCarousel">
+                <div class="server-list" id="serverList">
+                    <div class="server-item active" onclick="selectServer(1, '一区-艾泽拉斯')">一区-艾泽拉斯</div>
+                    <div class="server-item" onclick="selectServer(2, '二区-洛丹伦')">二区-洛丹伦</div>
+                    <div class="server-item" onclick="selectServer(3, '三区-暴风城')">三区-暴风城</div>
+                    <div class="server-item" onclick="selectServer(4, '四区-铁炉堡')">四区-铁炉堡</div>
+                </div>
+            </div>
+            <div class="character-list" id="characterList">
+                <div class="character-item" onclick="selectCharacter(1, '剑圣', '一区-艾泽拉斯', 85)">
+                    <div class="character-name">剑圣</div>
+                    <div class="character-level">等级 85</div>
+                </div>
+                <div class="character-item" onclick="selectCharacter(2, '圣骑士', '一区-艾泽拉斯', 72)">
+                    <div class="character-name">圣骑士</div>
+                    <div class="character-level">等级 72</div>
+                </div>
+                <div class="character-item" onclick="selectCharacter(3, '猎人', '一区-艾泽拉斯', 68)">
+                    <div class="character-name">猎人</div>
+                    <div class="character-level">等级 68</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 活动规则弹窗 -->
+    <div class="modal" id="rulesModal">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeModal('rulesModal')">✕</button>
+            <h2 class="modal-title">积分商城活动规则</h2>
+            <div class="modal-content-text">
+                <h3>📋 兑换明细</h3>
+                <ul>
+                    <li>积分可通过充值、活动等方式获得，1元充值=10积分</li>
+                    <li>积分商城商品每日10:00更新，库存有限，先兑先得</li>
+                    <li>每个商品都有兑换次数限制，请注意查看商品详情</li>
+                    <li>积分不可转让、不可提现，仅限本账号使用</li>
+                </ul>
+
+                <h3>🎁 奖励发放</h3>
+                <ul>
+                    <li>兑换成功后，奖励将在<span style="color: #1890ff; font-weight: 600;">24小时内</span>发放至游戏邮箱</li>
+                    <li>请及时登录游戏查收邮件，邮件保留期为7天</li>
+                    <li>如超过48小时未收到奖励，请联系客服处理</li>
+                    <li>部分特殊商品可能需要更长发放时间，以商品说明为准</li>
+                </ul>
+
+                <h3>⚠️ 注意事项</h3>
+                <ul>
+                    <li>兑换前请确认角色和区服信息，兑换后<span style="color: #ff4d4f; font-weight: 600;">不支持退换</span></li>
+                    <li>积分有效期为获得后180天，过期自动清零</li>
+                    <li>活动期间如有调整，以官方最新公告为准</li>
+                    <li>严禁使用外挂、作弊等非法手段获取积分，一经发现将封号处理</li>
+                    <li>本活动最终解释权归官方所有</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- 礼包详情弹窗 -->
+    <div class="modal gift-detail-modal" id="giftDetailModal">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeModal('giftDetailModal')">✕</button>
+            <div class="gift-detail-header">
+                <div class="gift-detail-image">
+                    <img src="libao.png" alt="礼包" id="giftDetailMainImage">
+                </div>
+                <div class="gift-detail-name" id="giftDetailName">夏日钓鱼648礼包</div>
+                <div class="gift-detail-price" id="giftDetailPrice">¥648</div>
+                <div class="gift-detail-time" id="giftDetailTime">2025-08-02 至 2025-09-09</div>
+            </div>
+            
+            <div class="gift-items-title">🎁 礼包内容</div>
+            <div class="gift-items-grid" id="giftItemsGrid">
+                <!-- 礼包物品将动态生成 -->
+            </div>
+            
+            <button class="gift-detail-buy-btn" onclick="buyGiftFromDetail()">立即购买</button>
+        </div>
+    </div>
+
+    <!-- 充值记录弹窗 -->
+    <div class="modal" id="historyModal">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeModal('historyModal')">✕</button>
+            <h2 class="modal-title">充值记录</h2>
+            <div class="history-list">
+                <div class="history-item">
+                    <div class="history-header">
+                        <div class="history-product">6480代币</div>
+                        <div class="history-amount">¥648</div>
+                    </div>
+                    <div class="history-info">
+                        时间：2024-02-25 14:30<br>
+                        状态：充值成功
+                    </div>
+                </div>
+                <div class="history-item">
+                    <div class="history-header">
+                        <div class="history-product">980代币</div>
+                        <div class="history-amount">¥98</div>
+                    </div>
+                    <div class="history-info">
+                        时间：2024-02-24 10:15<br>
+                        状态：充值成功
+                    </div>
+                </div>
+                <div class="history-item">
+                    <div class="history-header">
+                        <div class="history-product">夏日钓鱼500礼包</div>
+                        <div class="history-amount">¥500</div>
+                    </div>
+                    <div class="history-info">
+                        时间：2024-02-23 16:20<br>
+                        状态：充值成功
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 订单抽屉 -->
+    <div class="order-drawer" id="orderDrawer">
+        <div class="drawer-handle"></div>
+        <button class="drawer-close" onclick="closeDrawer()">✕</button>
+        <div class="drawer-content">
+            <h3 class="summary-title">订单确认</h3>
+            <div class="summary-item" id="drawerRoleInfo" style="display: none; background: #e6f7ff; padding: 10px; border-radius: 6px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 2px;" id="drawerRoleName">剑圣</div>
+                        <div style="font-size: 12px; color: #666;" id="drawerRoleServer">一区-艾泽拉斯</div>
+                    </div>
+                    <button class="change-role-btn" onclick="showRoleDrawer()">切换</button>
+                </div>
+            </div>
+            <div class="summary-item" id="tierFields">
+                <span class="summary-label">代币数量</span>
+                <span class="summary-value" id="tokenAmount">0</span>
+            </div>
+            <div class="summary-item" id="bonusFields">
+                <span class="summary-label">赠送代币</span>
+                <span class="summary-value" id="bonusAmount" style="color: #52c41a;">0</span>
+            </div>
+            <div class="summary-item" id="giftNameField" style="display: none;">
+                <span class="summary-label">礼包名称</span>
+                <span class="summary-value" id="giftName">-</span>
+            </div>
+            <div class="summary-item" id="giftContentField" style="display: none;">
+                <span class="summary-label">礼包内容</span>
+                <span class="summary-value" id="giftContent" style="font-size: 12px; line-height: 1.6;">-</span>
+            </div>
+            <div class="summary-item" id="pointsFields">
+                <span class="summary-label">赠送积分</span>
+                <span class="summary-value" id="pointsAmount" style="color: #ff6b00;">0</span>
+            </div>
+            
+            <div class="quantity-control" id="quantityControl">
+                <span class="quantity-label">购买数量</span>
+                <div class="quantity-selector">
+                    <button class="quantity-btn" id="decreaseBtn" onclick="decreaseQuantity()">-</button>
+                    <input type="number" class="quantity-input" id="quantityInput" value="1" min="1" max="99" onchange="updateQuantity()">
+                    <button class="quantity-btn" id="increaseBtn" onclick="increaseQuantity()">+</button>
+                </div>
+            </div>
+            
+            <div class="payment-methods">
+                <div class="payment-method-label">支付方式</div>
+                <div class="payment-options">
+                    <div class="payment-option selected" onclick="selectPayment('wechat')">
+                        <div class="payment-icon"><img src="微信支付.png" alt="微信" style="width: 32px; height: 32px;"></div>
+                        <div>微信支付</div>
+                    </div>
+                    <div class="payment-option" onclick="selectPayment('alipay')">
+                        <div class="payment-icon"><img src="支付宝支付.png" alt="支付宝" style="width: 32px; height: 32px;"></div>
+                        <div>支付宝</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="summary-divider"></div>
+            <div class="summary-total">
+                <span class="total-label">应付金额</span>
+                <span class="total-value" id="totalPrice">¥0</span>
+            </div>
+            <button class="btn btn-primary" id="payBtn" disabled onclick="handlePay()">立即支付</button>
+        </div>
+    </div>
+
+    <!-- 头部 -->
+    <div class="header">
+        <div class="logo">
+            <img src="gameicon.png" alt="游戏图标" class="game-icon">
+            <span>官方充值中心</span>
+        </div>
+        <div class="header-right">
+            <button class="add-to-home-btn" onclick="addToHomeScreen()" title="添加到桌面">📱</button>
+            <button class="login-btn-header" id="loginBtnHeader" onclick="showModal('loginModal')">登录</button>
+            <div class="user-info" id="userInfo">
+                <div class="user-avatar" onclick="toggleUserDropdown()">👤</div>
+                <div class="user-dropdown" id="userDropdown">
+                    <div class="dropdown-item" onclick="showModal('historyModal')">充值记录</div>
+                    <div class="dropdown-item" onclick="switchAccount()">切换账号</div>
+                    <div class="dropdown-item" onclick="logout()">退出登录</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Banner -->
+    <div class="banner">
+        <img src="banner.jpg" alt="充值活动" class="banner-image">
+        <div class="banner-dots">
+            <div class="banner-dot active"></div>
+            <div class="banner-dot"></div>
+            <div class="banner-dot"></div>
+        </div>
+    </div>
+
+    <!-- 通知栏 -->
+    <div class="notice-bar" id="noticeBar">
+        <div class="notice-icon">📢</div>
+        <div class="notice-text">充值活动进行中！首充双倍，限时优惠！</div>
+        <div class="close-notice" onclick="closeNotice()">✕</div>
+    </div>
+
+    <!-- 角色信息 -->
+    <div class="role-info" id="roleInfo">
+        <div class="role-details">
+            <div class="role-name" id="roleName">剑圣</div>
+            <div class="role-server" id="roleServer">一区-艾泽拉斯</div>
+            <div class="role-points" id="rolePoints">积分：12,580</div>
+        </div>
+        <button class="change-role-btn" onclick="showRoleDrawer()">切换角色</button>
+    </div>
+
+    <!-- 主要内容 -->
+    <div class="card">
+        <div class="recharge-tab-nav">
+            <div class="recharge-tab-item active" onclick="switchRechargeTab('tier')">代币充值</div>
+            <div class="recharge-tab-item" onclick="switchRechargeTab('gift')">限时礼包</div>
+        </div>
+
+            <!-- 代币充值 -->
+            <div class="recharge-tab-content active" id="tier-tab">
+                <div class="tier-grid">
+                    <div class="tier-card" onclick="selectTier(1)">
+                        <div class="tier-points-top">赠送600积分</div>
+                        <div class="tier-content">
+                            <div class="tier-token-group">
+                                <img src="daibi.png" alt="代币" class="tier-main-icon">
+                                <div class="tier-amount">60</div>
+                            </div>
+                        </div>
+                        <div class="tier-price-bottom">¥6</div>
+                    </div>
+                    <div class="tier-card" onclick="selectTier(2)">
+                        <div class="tier-points-top">赠送3000积分</div>
+                        <div class="tier-content">
+                            <div class="tier-token-group">
+                                <img src="daibi.png" alt="代币" class="tier-main-icon">
+                                <div class="tier-amount">300</div>
+                            </div>
+                            <span class="tier-plus">+</span>
+                            <div class="tier-bonus-group">
+                                <img src="zs.png" alt="赠送" class="tier-bonus-icon">
+                                <span class="tier-bonus">30</span>
+                            </div>
+                        </div>
+                        <div class="tier-price-bottom">¥30</div>
+                    </div>
+                    <div class="tier-card" onclick="selectTier(3)">
+                        <div class="tier-points-top">赠送9800积分</div>
+                        <div class="tier-content">
+                            <div class="tier-token-group">
+                                <img src="daibi.png" alt="代币" class="tier-main-icon">
+                                <div class="tier-amount">980</div>
+                            </div>
+                            <span class="tier-plus">+</span>
+                            <div class="tier-bonus-group">
+                                <img src="zs.png" alt="赠送" class="tier-bonus-icon">
+                                <span class="tier-bonus">196</span>
+                            </div>
+                        </div>
+                        <div class="tier-price-bottom">¥98</div>
+                    </div>
+                    <div class="tier-card" onclick="selectTier(4)">
+                        <div class="tier-points-top">赠送32800积分</div>
+                        <div class="tier-content">
+                            <div class="tier-token-group">
+                                <img src="daibi.png" alt="代币" class="tier-main-icon">
+                                <div class="tier-amount">3280</div>
+                            </div>
+                            <span class="tier-plus">+</span>
+                            <div class="tier-bonus-group">
+                                <img src="zs.png" alt="赠送" class="tier-bonus-icon">
+                                <span class="tier-bonus">984</span>
+                            </div>
+                        </div>
+                        <div class="tier-price-bottom">¥328</div>
+                    </div>
+                    <div class="tier-card" onclick="selectTier(5)">
+                        <div class="tier-points-top">赠送64800积分</div>
+                        <div class="tier-content">
+                            <div class="tier-token-group">
+                                <img src="daibi.png" alt="代币" class="tier-main-icon">
+                                <div class="tier-amount">6480</div>
+                            </div>
+                            <span class="tier-plus">+</span>
+                            <div class="tier-bonus-group">
+                                <img src="zs.png" alt="赠送" class="tier-bonus-icon">
+                                <span class="tier-bonus">2592</span>
+                            </div>
+                        </div>
+                        <div class="tier-price-bottom">¥648</div>
+                    </div>
+                </div>
+            </div>
+
+        <!-- 限时礼包 -->
+        <div class="recharge-tab-content" id="gift-tab">
+                <div class="gift-grid">
+                    <div class="gift-card" onclick="selectGift(1)">
+                        <div class="gift-points-badge">赠送64800积分</div>
+                        <div class="gift-main">
+                            <div class="gift-left" onclick="event.stopPropagation(); showGiftDetail(1)">
+                                <img src="libao.png" alt="礼包">
+                            </div>
+                            <div class="gift-middle">
+                                <div class="gift-name">夏日钓鱼648礼包</div>
+                                <div class="gift-price">¥648</div>
+                                <div class="gift-limit">限购：3次</div>
+                                <div class="gift-time">2025-08-02 至 2025-09-09</div>
+                            </div>
+                            <div class="gift-right">
+                                <button class="gift-buy-btn">立即购买</button>
+                            </div>
+                        </div>
+                        <div class="gift-bottom">
+                            <div class="gift-desc">包含：6480代币、专属道具×5、稀有材料×10</div>
+                        </div>
+                    </div>
+                    <div class="gift-card" onclick="selectGift(2)">
+                        <div class="gift-points-badge">赠送50000积分</div>
+                        <div class="gift-main">
+                            <div class="gift-left" onclick="event.stopPropagation(); showGiftDetail(2)">
+                                <img src="libao.png" alt="礼包">
+                            </div>
+                            <div class="gift-middle">
+                                <div class="gift-name">夏日钓鱼500礼包</div>
+                                <div class="gift-price">¥500</div>
+                                <div class="gift-limit">限购：5次</div>
+                                <div class="gift-time">2025-08-02 至 2025-09-09</div>
+                            </div>
+                            <div class="gift-right">
+                                <button class="gift-buy-btn">立即购买</button>
+                            </div>
+                        </div>
+                        <div class="gift-bottom">
+                            <div class="gift-desc">包含：5000代币、稀有道具×3、材料×8</div>
+                        </div>
+                    </div>
+                    <div class="gift-card" onclick="selectGift(3)">
+                        <div class="gift-points-badge">赠送9800积分</div>
+                        <div class="gift-main">
+                            <div class="gift-left" onclick="event.stopPropagation(); showGiftDetail(3)">
+                                <img src="libao.png" alt="礼包">
+                            </div>
+                            <div class="gift-middle">
+                                <div class="gift-name">新手礼包</div>
+                                <div class="gift-price">¥98</div>
+                                <div class="gift-limit">限购：1次</div>
+                                <div class="gift-time">永久有效</div>
+                            </div>
+                            <div class="gift-right">
+                                <button class="gift-buy-btn">立即购买</button>
+                            </div>
+                        </div>
+                        <div class="gift-bottom">
+                            <div class="gift-desc">包含：980代币、新手装备×1、经验药水×5</div>
+                        </div>
+                    </div>
+                    <div class="gift-card" onclick="selectGift(4)">
+                        <div class="gift-points-badge">赠送3000积分</div>
+                        <div class="gift-main">
+                            <div class="gift-left" onclick="event.stopPropagation(); showGiftDetail(4)">
+                                <img src="libao.png" alt="礼包">
+                            </div>
+                            <div class="gift-middle">
+                                <div class="gift-name">月卡礼包</div>
+                                <div class="gift-price">¥30</div>
+                                <div class="gift-limit">限购：不限</div>
+                                <div class="gift-time">30天有效期</div>
+                            </div>
+                            <div class="gift-right">
+                                <button class="gift-buy-btn">立即购买</button>
+                            </div>
+                        </div>
+                        <div class="gift-bottom">
+                            <div class="gift-desc">包含：每日领取100代币，连续30天</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 积分商城内容 -->
+        <div class="tab-content" id="points-content">
+            <div class="points-mall-header">
+                <div class="points-mall-tabs">
+                    <div class="points-mall-tab active" onclick="switchPointsMallTab('pool')">兑换池</div>
+                    <div class="points-mall-tab" onclick="switchPointsMallTab('myexchange')">我的兑换</div>
+                </div>
+                <button class="rules-btn" onclick="showModal('rulesModal')">活动规则</button>
+            </div>
+
+            <!-- 兑换池 -->
+            <div class="points-mall-content active" id="pool-content">
+                <div class="pool-tabs">
+                    <div class="pool-tab active" onclick="switchPoolTab('all')">默认</div>
+                    <div class="pool-tab" onclick="switchPoolTab('available')">可兑换</div>
+                </div>
+
+                <!-- 默认商品列表 -->
+                <div class="pool-content active" id="all-pool">
+                    <div class="mall-item-card">
+                        <div class="mall-item-main">
+                            <div class="mall-item-left">
+                                <img src="libao.png" alt="商品">
+                            </div>
+                            <div class="mall-item-middle">
+                                <div class="mall-item-name">稀有装备礼包</div>
+                                <div class="mall-item-points">5000 积分</div>
+                                <div class="mall-item-limit">限兑：每人3次</div>
+                                <div class="mall-item-stock">剩余库存：50</div>
+                            </div>
+                            <div class="mall-item-right">
+                                <button class="mall-exchange-btn" onclick="exchangeItem(1)">兑换</button>
+                            </div>
+                        </div>
+                        <div class="mall-item-bottom">
+                            <div class="mall-item-desc">包含：稀有武器×1、防具×1、强化石×10</div>
+                        </div>
+                    </div>
+
+                    <div class="mall-item-card">
+                        <div class="mall-item-main">
+                            <div class="mall-item-left">
+                                <img src="libao.png" alt="商品">
+                            </div>
+                            <div class="mall-item-middle">
+                                <div class="mall-item-name">经验药水礼包</div>
+                                <div class="mall-item-points">2000 积分</div>
+                                <div class="mall-item-limit">限兑：每人5次</div>
+                                <div class="mall-item-stock">剩余库存：100</div>
+                            </div>
+                            <div class="mall-item-right">
+                                <button class="mall-exchange-btn" onclick="exchangeItem(2)">兑换</button>
+                            </div>
+                        </div>
+                        <div class="mall-item-bottom">
+                            <div class="mall-item-desc">包含：大型经验药水×5、中型经验药水×10</div>
+                        </div>
+                    </div>
+
+                    <div class="mall-item-card">
+                        <div class="mall-item-main">
+                            <div class="mall-item-left">
+                                <img src="libao.png" alt="商品">
+                            </div>
+                            <div class="mall-item-middle">
+                                <div class="mall-item-name">传说宝箱</div>
+                                <div class="mall-item-points">10000 积分</div>
+                                <div class="mall-item-limit">限兑：每人1次</div>
+                                <div class="mall-item-stock">剩余库存：10</div>
+                            </div>
+                            <div class="mall-item-right">
+                                <button class="mall-exchange-btn" disabled>积分不足</button>
+                            </div>
+                        </div>
+                        <div class="mall-item-bottom">
+                            <div class="mall-item-desc">包含：传说装备×1、稀有材料×20、金币×50000</div>
+                        </div>
+                    </div>
+
+                    <div class="mall-item-card">
+                        <div class="mall-item-main">
+                            <div class="mall-item-left">
+                                <img src="libao.png" alt="商品">
+                            </div>
+                            <div class="mall-item-middle">
+                                <div class="mall-item-name">材料包</div>
+                                <div class="mall-item-points">1000 积分</div>
+                                <div class="mall-item-limit">限兑：不限</div>
+                                <div class="mall-item-stock">剩余库存：999</div>
+                            </div>
+                            <div class="mall-item-right">
+                                <button class="mall-exchange-btn" onclick="exchangeItem(4)">兑换</button>
+                            </div>
+                        </div>
+                        <div class="mall-item-bottom">
+                            <div class="mall-item-desc">包含：铁矿石×50、木材×50、布料×30</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 可兑换商品列表 -->
+                <div class="pool-content" id="available-pool">
+                    <div class="mall-item-card">
+                        <div class="mall-item-main">
+                            <div class="mall-item-left">
+                                <img src="libao.png" alt="商品">
+                            </div>
+                            <div class="mall-item-middle">
+                                <div class="mall-item-name">稀有装备礼包</div>
+                                <div class="mall-item-points">5000 积分</div>
+                                <div class="mall-item-limit">限兑：每人3次</div>
+                                <div class="mall-item-stock">剩余库存：50</div>
+                            </div>
+                            <div class="mall-item-right">
+                                <button class="mall-exchange-btn" onclick="exchangeItem(1)">兑换</button>
+                            </div>
+                        </div>
+                        <div class="mall-item-bottom">
+                            <div class="mall-item-desc">包含：稀有武器×1、防具×1、强化石×10</div>
+                        </div>
+                    </div>
+
+                    <div class="mall-item-card">
+                        <div class="mall-item-main">
+                            <div class="mall-item-left">
+                                <img src="libao.png" alt="商品">
+                            </div>
+                            <div class="mall-item-middle">
+                                <div class="mall-item-name">经验药水礼包</div>
+                                <div class="mall-item-points">2000 积分</div>
+                                <div class="mall-item-limit">限兑：每人5次</div>
+                                <div class="mall-item-stock">剩余库存：100</div>
+                            </div>
+                            <div class="mall-item-right">
+                                <button class="mall-exchange-btn" onclick="exchangeItem(2)">兑换</button>
+                            </div>
+                        </div>
+                        <div class="mall-item-bottom">
+                            <div class="mall-item-desc">包含：大型经验药水×5、中型经验药水×10</div>
+                        </div>
+                    </div>
+
+                    <div class="mall-item-card">
+                        <div class="mall-item-main">
+                            <div class="mall-item-left">
+                                <img src="libao.png" alt="商品">
+                            </div>
+                            <div class="mall-item-middle">
+                                <div class="mall-item-name">材料包</div>
+                                <div class="mall-item-points">1000 积分</div>
+                                <div class="mall-item-limit">限兑：不限</div>
+                                <div class="mall-item-stock">剩余库存：999</div>
+                            </div>
+                            <div class="mall-item-right">
+                                <button class="mall-exchange-btn" onclick="exchangeItem(4)">兑换</button>
+                            </div>
+                        </div>
+                        <div class="mall-item-bottom">
+                            <div class="mall-item-desc">包含：铁矿石×50、木材×50、布料×30</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 我的兑换 -->
+            <div class="points-mall-content" id="myexchange-content">
+                <div class="exchange-record-item">
+                    <div class="exchange-record-header">
+                        <div class="exchange-record-time">2024-02-25 14:30</div>
+                        <div class="exchange-record-status success">兑换成功</div>
+                    </div>
+                    <div class="exchange-record-body">
+                        <div>活动：<span class="exchange-record-activity">春节积分商城</span></div>
+                        <div>消耗积分：<span class="exchange-record-points">5000</span></div>
+                        <div>物品：稀有装备礼包</div>
+                    </div>
+                </div>
+
+                <div class="exchange-record-item">
+                    <div class="exchange-record-header">
+                        <div class="exchange-record-time">2024-02-24 10:15</div>
+                        <div class="exchange-record-status success">兑换成功</div>
+                    </div>
+                    <div class="exchange-record-body">
+                        <div>活动：<span class="exchange-record-activity">春节积分商城</span></div>
+                        <div>消耗积分：<span class="exchange-record-points">2000</span></div>
+                        <div>物品：经验药水礼包</div>
+                    </div>
+                </div>
+
+                <div class="exchange-record-item">
+                    <div class="exchange-record-header">
+                        <div class="exchange-record-time">2024-02-23 16:20</div>
+                        <div class="exchange-record-status pending">待发放</div>
+                    </div>
+                    <div class="exchange-record-body">
+                        <div>活动：<span class="exchange-record-activity">春节积分商城</span></div>
+                        <div>消耗积分：<span class="exchange-record-points">1000</span></div>
+                        <div>物品：材料包</div>
+                    </div>
+                </div>
+
+                <div class="exchange-record-item">
+                    <div class="exchange-record-header">
+                        <div class="exchange-record-time">2024-02-22 09:45</div>
+                        <div class="exchange-record-status success">兑换成功</div>
+                    </div>
+                    <div class="exchange-record-body">
+                        <div>活动：<span class="exchange-record-activity">春节积分商城</span></div>
+                        <div>消耗积分：<span class="exchange-record-points">2000</span></div>
+                        <div>物品：经验药水礼包</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 活动中心内容 -->
+        <div class="tab-content" id="activity-content">
+            <div class="activity-tab-nav">
+                <div class="activity-tab-item active" onclick="switchActivityTab('wheel')">限时转盘</div>
+                <div class="activity-tab-item" onclick="switchActivityTab('avatar')">充值送头像框</div>
+                <div class="activity-tab-item" onclick="switchActivityTab('cumulative')">累充活动</div>
+            </div>
+
+            <!-- 限时转盘 -->
+            <div class="activity-tab-content active" id="wheel-tab">
+                <div class="wheel-container">
+                    <!-- 喇叭播报 -->
+                    <div class="wheel-broadcast">
+                        <div class="broadcast-content">
+                            🔊 恭喜玩家【剑圣】抽中稀有武器×1 | 恭喜玩家【法师】抽中金币×5000 | 恭喜玩家【战士】抽中经验药水×3
+                        </div>
+                    </div>
+
+                    <!-- 活动信息 -->
+                    <div class="wheel-info">
+                        <div class="wheel-time">活动剩余时间：3天12小时30分</div>
+                        <div class="wheel-cost">每次消耗：500积分</div>
+                    </div>
+
+                    <!-- 转盘 -->
+                    <div class="wheel-wrapper">
+                        <div class="wheel" id="luckyWheel">
+                            <div class="wheel-divider"></div>
+                            <div class="wheel-divider"></div>
+                            <div class="wheel-divider"></div>
+                            <div class="wheel-divider"></div>
+                            <div class="wheel-item">
+                                <div class="wheel-item-content">
+                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <div class="wheel-item-name">稀有武器</div>
+                                    <div class="wheel-item-count">×1</div>
+                                </div>
+                            </div>
+                            <div class="wheel-item">
+                                <div class="wheel-item-content">
+                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <div class="wheel-item-name">金币</div>
+                                    <div class="wheel-item-count">×5000</div>
+                                </div>
+                            </div>
+                            <div class="wheel-item">
+                                <div class="wheel-item-content">
+                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <div class="wheel-item-name">经验药水</div>
+                                    <div class="wheel-item-count">×3</div>
+                                </div>
+                            </div>
+                            <div class="wheel-item">
+                                <div class="wheel-item-content">
+                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <div class="wheel-item-name">强化石</div>
+                                    <div class="wheel-item-count">×10</div>
+                                </div>
+                            </div>
+                            <div class="wheel-item">
+                                <div class="wheel-item-content">
+                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <div class="wheel-item-name">传说装备</div>
+                                    <div class="wheel-item-count">×1</div>
+                                </div>
+                            </div>
+                            <div class="wheel-item">
+                                <div class="wheel-item-content">
+                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <div class="wheel-item-name">材料包</div>
+                                    <div class="wheel-item-count">×5</div>
+                                </div>
+                            </div>
+                            <div class="wheel-item">
+                                <div class="wheel-item-content">
+                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <div class="wheel-item-name">宝石</div>
+                                    <div class="wheel-item-count">×20</div>
+                                </div>
+                            </div>
+                            <div class="wheel-item">
+                                <div class="wheel-item-content">
+                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <div class="wheel-item-name">代币</div>
+                                    <div class="wheel-item-count">×100</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="wheel-pointer"></div>
+                        <div class="wheel-center-btn" onclick="spinWheel()">抽奖</div>
+                    </div>
+
+                    <!-- 抽奖按钮 -->
+                    <div class="wheel-buttons">
+                        <div class="wheel-btn-wrapper">
+                            <button class="wheel-btn wheel-btn-free" onclick="freeSpinWheel()">免费抽奖</button>
+                            <div class="wheel-btn-info">剩余1次免费机会</div>
+                        </div>
+                        <div class="wheel-btn-wrapper">
+                            <button class="wheel-btn wheel-btn-ten" onclick="spinWheelTen()">抽奖10次</button>
+                            <div class="wheel-btn-info">消耗5000积分</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 充值送头像框 -->
+            <div class="activity-tab-content" id="avatar-tab">
+                <div class="avatar-reward-container">
+                    <div class="avatar-title">银票充值送福利</div>
+                    <div class="avatar-desc">
+                        完成任意一笔充值，即可获得头像框奖励！<br>
+                        支付完成后请耐心等待几分钟，刷新页面才能领取奖励！
+                    </div>
+
+                    <div class="avatar-image-wrapper">
+                        <img src="libao.png" alt="头像框" class="avatar-image">
+                    </div>
+
+                    <button class="avatar-claim-btn" id="avatarClaimBtn" disabled onclick="claimAvatarReward()">
+                        暂未充值，无法领取
+                    </button>
+
+                    <div class="avatar-rules">
+                        <div class="avatar-rules-title">📜 活动规则</div>
+                        <div class="avatar-rules-content">
+                            <ul>
+                                <li>活动期间，完成任意金额充值即可领取专属头像框</li>
+                                <li>每个账号仅可领取一次，领取后永久生效</li>
+                                <li>充值成功后，请等待3-5分钟刷新页面即可领取</li>
+                                <li>头像框将直接发放至游戏邮箱，请及时查收</li>
+                                <li>本活动最终解释权归官方所有</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 累充活动 -->
+            <div class="activity-tab-content" id="cumulative-tab">
+                <div class="cumulative-grid">
+                    <!-- 累充礼包1 - 可领取 -->
+                    <div class="cumulative-card available">
+                        <div class="cumulative-main">
+                            <div class="cumulative-left">
+                                <img src="libao.png" alt="礼包">
+                            </div>
+                            <div class="cumulative-middle">
+                                <div class="cumulative-name">累充礼包I</div>
+                                <div class="cumulative-condition">活动期间累充满100元后领取</div>
+                                <div class="cumulative-time">2025-08-01 至 2025-09-30</div>
+                            </div>
+                            <div class="cumulative-right">
+                                <button class="cumulative-btn cumulative-btn-claim" onclick="claimCumulativeReward(1)">领取</button>
+                            </div>
+                        </div>
+                        <div class="cumulative-bottom">
+                            <div class="cumulative-desc">包含：稀有武器×1、金币×10000、经验药水×5</div>
+                            <div class="cumulative-progress">
+                                <div class="cumulative-progress-label">
+                                    <span>领取进度</span>
+                                    <span>1/1</span>
+                                </div>
+                                <div class="cumulative-progress-bar">
+                                    <div class="cumulative-progress-fill" style="width: 100%;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 累充礼包2 - 未达成 -->
+                    <div class="cumulative-card">
+                        <div class="cumulative-main">
+                            <div class="cumulative-left">
+                                <img src="libao.png" alt="礼包">
+                            </div>
+                            <div class="cumulative-middle">
+                                <div class="cumulative-name">累充礼包II</div>
+                                <div class="cumulative-condition">活动期间累充满300元后领取</div>
+                                <div class="cumulative-time">2025-08-01 至 2025-09-30</div>
+                            </div>
+                            <div class="cumulative-right">
+                                <button class="cumulative-btn cumulative-btn-recharge" onclick="goToRecharge()">前往充值</button>
+                            </div>
+                        </div>
+                        <div class="cumulative-bottom">
+                            <div class="cumulative-desc">包含：传说装备×1、金币×30000、强化石×20</div>
+                            <div class="cumulative-progress">
+                                <div class="cumulative-progress-label">
+                                    <span>领取进度</span>
+                                    <span>0/1</span>
+                                </div>
+                                <div class="cumulative-progress-bar">
+                                    <div class="cumulative-progress-fill" style="width: 33%;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 累充礼包3 - 已领取 -->
+                    <div class="cumulative-card completed">
+                        <div class="cumulative-main">
+                            <div class="cumulative-left">
+                                <img src="libao.png" alt="礼包">
+                            </div>
+                            <div class="cumulative-middle">
+                                <div class="cumulative-name">累充礼包III</div>
+                                <div class="cumulative-condition">活动期间累充满500元后领取</div>
+                                <div class="cumulative-time">2025-08-01 至 2025-09-30</div>
+                            </div>
+                            <div class="cumulative-right">
+                                <button class="cumulative-btn cumulative-btn-claimed" disabled>已领取</button>
+                            </div>
+                        </div>
+                        <div class="cumulative-bottom">
+                            <div class="cumulative-desc">包含：神话装备×1、金币×50000、宝石×50</div>
+                            <div class="cumulative-progress">
+                                <div class="cumulative-progress-label">
+                                    <span>领取进度</span>
+                                    <span>1/1</span>
+                                </div>
+                                <div class="cumulative-progress-bar">
+                                    <div class="cumulative-progress-fill" style="width: 100%;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 累充礼包4 - 未达成 -->
+                    <div class="cumulative-card">
+                        <div class="cumulative-main">
+                            <div class="cumulative-left">
+                                <img src="libao.png" alt="礼包">
+                            </div>
+                            <div class="cumulative-middle">
+                                <div class="cumulative-name">累充礼包IV</div>
+                                <div class="cumulative-condition">活动期间累充满1000元后领取</div>
+                                <div class="cumulative-time">2025-08-01 至 2025-09-30</div>
+                            </div>
+                            <div class="cumulative-right">
+                                <button class="cumulative-btn cumulative-btn-recharge" onclick="goToRecharge()">前往充值</button>
+                            </div>
+                        </div>
+                        <div class="cumulative-bottom">
+                            <div class="cumulative-desc">包含：至尊装备×1、金币×100000、专属称号×1</div>
+                            <div class="cumulative-progress">
+                                <div class="cumulative-progress-label">
+                                    <span>领取进度</span>
+                                    <span>0/1</span>
+                                </div>
+                                <div class="cumulative-progress-bar">
+                                    <div class="cumulative-progress-fill" style="width: 50%;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部充值说明 -->
+    <div class="footer-info show">
+        <div class="footer-section">
+            <div class="footer-title">💳 充值到账说明</div>
+            <div class="footer-content">
+                <p>• 充值成功后，代币将<span class="footer-highlight">立即到账</span>至您的游戏账户</p>
+                <p>• 如遇特殊情况延迟，一般会在<span class="footer-highlight">5-10分钟</span>内到账</p>
+                <p>• 充值过程中请勿关闭页面，以免造成订单异常</p>
+            </div>
+        </div>
+
+        <div class="footer-section">
+            <div class="footer-title">🛡️ 售后服务</div>
+            <div class="footer-content">
+                <p>• 如充值后<span class="footer-highlight">30分钟</span>仍未到账，请联系客服处理</p>
+                <p>• 客服工作时间：<span class="footer-highlight">9:00-22:00</span>（全年无休）</p>
+                <p>• 充值记录可在"充值记录"中查看，保留180天</p>
+            </div>
+        </div>
+
+        <div class="footer-section">
+            <div class="footer-title">⚠️ 温馨提示</div>
+            <div class="footer-content">
+                <p>• 请确认充值角色和区服信息，充值后<span class="footer-highlight">不支持退款</span></p>
+                <p>• 未成年人充值需经监护人同意，理性消费</p>
+                <p>• 请通过官方渠道充值，谨防诈骗</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedType = null;
+        let selectedId = null;
+        let currentPrice = 0;
+        let currentTokens = 0;
+        let currentBonus = 0;
+        let currentName = '';
+        let selectedPaymentMethod = 'wechat';
+        let currentRoleId = null;
+        let loginMethod = null; // 'phone', 'account', 'roleid'
+
+        function showModal(modalId) {
+            document.getElementById(modalId).classList.add('show');
+            document.getElementById('userDropdown').classList.remove('show');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        function handleLogin(event) {
+            event.preventDefault();
+            closeModal('loginModal');
+            document.getElementById('loginBtnHeader').style.display = 'none';
+            document.getElementById('userInfo').classList.add('show');
+            
+            // 自动弹出角色选择抽屉
+            setTimeout(() => {
+                showRoleDrawer();
+            }, 300);
+        }
+
+        // 角色选择抽屉相关函数
+        const serverCharacters = {
+            1: [
+                { id: 1, name: '剑圣', level: 85 },
+                { id: 2, name: '圣骑士', level: 72 },
+                { id: 3, name: '猎人', level: 68 }
+            ],
+            2: [
+                { id: 4, name: '法师', level: 80 },
+                { id: 5, name: '牧师', level: 75 }
+            ],
+            3: [
+                { id: 6, name: '战士', level: 90 },
+                { id: 7, name: '盗贼', level: 65 },
+                { id: 8, name: '德鲁伊', level: 70 }
+            ],
+            4: [
+                { id: 9, name: '萨满', level: 78 }
+            ]
+        };
+
+        let currentServerId = 1;
+        let currentServerName = '一区-艾泽拉斯';
+
+        function showRoleDrawer() {
+            document.getElementById('roleDrawer').classList.add('show');
+            updateCharacterList(currentServerId);
+        }
+
+        function closeRoleDrawer() {
+            document.getElementById('roleDrawer').classList.remove('show');
+        }
+
+        function selectServer(serverId, serverName) {
+            currentServerId = serverId;
+            currentServerName = serverName;
+            
+            // 更新服务器列表高亮
+            document.querySelectorAll('.server-item').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            
+            // 更新角色列表
+            updateCharacterList(serverId);
+        }
+
+        function updateCharacterList(serverId) {
+            const characterList = document.getElementById('characterList');
+            const characters = serverCharacters[serverId] || [];
+            
+            characterList.innerHTML = characters.map(char => `
+                <div class="character-item" onclick="selectCharacter(${char.id}, '${char.name}', '${currentServerName}', ${char.level})">
+                    <div class="character-name">${char.name}</div>
+                    <div class="character-level">等级 ${char.level}</div>
+                </div>
+            `).join('');
+        }
+
+        function selectCharacter(charId, charName, serverName, level) {
+            currentRoleId = charId;
+            
+            // 更新页面上的角色信息
+            document.getElementById('roleName').textContent = charName;
+            document.getElementById('roleServer').textContent = serverName;
+            document.getElementById('roleInfo').classList.add('show');
+            
+            // 更新订单抽屉中的角色信息
+            document.getElementById('drawerRoleName').textContent = charName;
+            document.getElementById('drawerRoleServer').textContent = serverName;
+            document.getElementById('drawerRoleInfo').style.display = 'block';
+            
+            // 高亮选中的角色
+            document.querySelectorAll('.character-item').forEach(item => item.classList.remove('selected'));
+            event.currentTarget.classList.add('selected');
+            
+            // 关闭抽屉
+            closeRoleDrawer();
+        }
+
+        function toggleUserDropdown() {
+            const dropdown = document.getElementById('userDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        function switchAccount() {
+            document.getElementById('userDropdown').classList.remove('show');
+            
+            // 根据当前登录方式弹出对应的登录弹窗
+            showModal('loginModal');
+            
+            // 使用requestAnimationFrame确保DOM更新后再切换tab
+            requestAnimationFrame(() => {
+                if (loginMethod === 'phone') {
+                    // 手机号登录：切换到手机号登录tab
+                    const phoneTab = document.querySelector('.login-tab:nth-child(1)');
+                    const phoneForm = document.getElementById('phoneLoginForm');
+                    
+                    document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.login-form-content').forEach(f => f.classList.remove('active'));
+                    
+                    phoneTab.classList.add('active');
+                    phoneForm.classList.add('active');
+                } else if (loginMethod === 'account') {
+                    // 账密登录：切换到账密登录tab
+                    const accountTab = document.querySelector('.login-tab:nth-child(2)');
+                    const accountForm = document.getElementById('accountLoginForm');
+                    
+                    document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.login-form-content').forEach(f => f.classList.remove('active'));
+                    
+                    accountTab.classList.add('active');
+                    accountForm.classList.add('active');
+                }
+            });
+        }
+
+        function logout() {
+            document.getElementById('userDropdown').classList.remove('show');
+            document.getElementById('userInfo').classList.remove('show');
+            document.getElementById('roleInfo').classList.remove('show');
+            document.getElementById('loginBtnHeader').style.display = 'block';
+            currentRoleId = null;
+            resetSelection();
+        }
+
+        function closeNotice() {
+            document.getElementById('noticeBar').style.display = 'none';
+        }
+
+        function selectPayment(method) {
+            selectedPaymentMethod = method;
+            document.querySelectorAll('.payment-option').forEach(option => {
+                option.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+        }
+
+        function selectTier(id) {
+            // 检查是否已登录
+            if (!currentRoleId) {
+                showModal('loginModal');
+                return;
+            }
+
+            document.querySelectorAll('.tier-card').forEach(card => card.classList.remove('selected'));
+            document.querySelectorAll('.gift-card').forEach(card => card.classList.remove('selected'));
+            
+            event.currentTarget.classList.add('selected');
+            selectedType = 'tier';
+            selectedId = id;
+
+            const tiers = {
+                1: { name: '60代币', price: 6, tokens: 60, bonus: 0 },
+                2: { name: '300代币', price: 30, tokens: 300, bonus: 30 },
+                3: { name: '980代币', price: 98, tokens: 980, bonus: 196 },
+                4: { name: '3280代币', price: 328, tokens: 3280, bonus: 984 },
+                5: { name: '6480代币', price: 648, tokens: 6480, bonus: 2592 }
+            };
+
+            const tier = tiers[id];
+            updateOrderSummary(tier.name, tier.price, tier.tokens, tier.bonus);
+            showDrawer();
+        }
+
+        function selectGift(id) {
+            // 检查是否已登录
+            if (!currentRoleId) {
+                showModal('loginModal');
+                return;
+            }
+
+            document.querySelectorAll('.tier-card').forEach(card => card.classList.remove('selected'));
+            document.querySelectorAll('.gift-card').forEach(card => card.classList.remove('selected'));
+            
+            event.currentTarget.classList.add('selected');
+            selectedType = 'gift';
+            selectedId = id;
+
+            const gifts = {
+                1: { 
+                    name: '夏日钓鱼648礼包', 
+                    price: 648, 
+                    points: 64800,
+                    content: '包含：6480代币、专属道具×5、稀有材料×10'
+                },
+                2: { 
+                    name: '夏日钓鱼500礼包', 
+                    price: 500, 
+                    points: 50000,
+                    content: '包含：5000代币、稀有道具×3、材料×8'
+                },
+                3: { 
+                    name: '新手礼包', 
+                    price: 98, 
+                    points: 9800,
+                    content: '包含：980代币、新手装备×1、经验药水×5'
+                },
+                4: { 
+                    name: '月卡礼包', 
+                    price: 30, 
+                    points: 3000,
+                    content: '包含：每日领取100代币，连续30天'
+                }
+            };
+
+            const gift = gifts[id];
+            updateOrderSummary(gift.name, gift.price, 0, 0, gift.points, gift.content);
+            showDrawer();
+        }
+
+        // 批量购买相关变量
+        let currentQuantity = 1;
+        let basePrice = 0;
+        let baseTokens = 0;
+        let baseBonus = 0;
+        let basePoints = 0;
+        let giftContentText = '';
+
+        function updateOrderSummary(name, price, tokens, bonus, points = 0, content = '') {
+            currentName = name;
+            basePrice = price;
+            baseTokens = tokens;
+            baseBonus = bonus;
+            basePoints = points || (price * 100); // 默认1元=100积分
+            giftContentText = content;
+            currentQuantity = 1;
+
+            // 重置数量输入框
+            document.getElementById('quantityInput').value = 1;
+            updateQuantityButtons();
+
+            // 根据类型显示/隐藏字段
+            if (selectedType === 'tier') {
+                // 代币充值：显示代币数量、赠送代币、赠送积分
+                document.getElementById('tierFields').style.display = 'flex';
+                document.getElementById('bonusFields').style.display = 'flex';
+                document.getElementById('pointsFields').style.display = 'flex';
+                document.getElementById('giftNameField').style.display = 'none';
+                document.getElementById('giftContentField').style.display = 'none';
+            } else if (selectedType === 'gift') {
+                // 限时礼包：只显示礼包名称、礼包内容、赠送积分
+                document.getElementById('tierFields').style.display = 'none';
+                document.getElementById('bonusFields').style.display = 'none';
+                document.getElementById('pointsFields').style.display = 'flex';
+                document.getElementById('giftNameField').style.display = 'flex';
+                document.getElementById('giftContentField').style.display = 'flex';
+                
+                document.getElementById('giftName').textContent = name;
+                document.getElementById('giftContent').textContent = content;
+            }
+
+            updateDisplayValues();
+            document.getElementById('payBtn').disabled = false;
+        }
+
+        function updateDisplayValues() {
+            const quantity = currentQuantity;
+            
+            if (selectedType === 'tier') {
+                document.getElementById('tokenAmount').textContent = baseTokens * quantity;
+                document.getElementById('bonusAmount').textContent = baseBonus * quantity;
+            }
+            
+            document.getElementById('pointsAmount').textContent = basePoints * quantity;
+            document.getElementById('totalPrice').textContent = '¥' + (basePrice * quantity);
+        }
+
+        function updateQuantityButtons() {
+            const decreaseBtn = document.getElementById('decreaseBtn');
+            const increaseBtn = document.getElementById('increaseBtn');
+            
+            decreaseBtn.disabled = currentQuantity <= 1;
+            increaseBtn.disabled = currentQuantity >= 99;
+        }
+
+        function decreaseQuantity() {
+            if (currentQuantity > 1) {
+                currentQuantity--;
+                document.getElementById('quantityInput').value = currentQuantity;
+                updateDisplayValues();
+                updateQuantityButtons();
+            }
+        }
+
+        function increaseQuantity() {
+            if (currentQuantity < 99) {
+                currentQuantity++;
+                document.getElementById('quantityInput').value = currentQuantity;
+                updateDisplayValues();
+                updateQuantityButtons();
+            }
+        }
+
+        function updateQuantity() {
+            const input = document.getElementById('quantityInput');
+            let value = parseInt(input.value) || 1;
+            
+            if (value < 1) value = 1;
+            if (value > 99) value = 99;
+            
+            currentQuantity = value;
+            input.value = value;
+            updateDisplayValues();
+            updateQuantityButtons();
+        }
+
+        function resetSelection() {
+            selectedType = null;
+            selectedId = null;
+            currentPrice = 0;
+            currentTokens = 0;
+            currentBonus = 0;
+            currentName = '';
+
+            document.querySelectorAll('.tier-card').forEach(card => card.classList.remove('selected'));
+            document.querySelectorAll('.gift-card').forEach(card => card.classList.remove('selected'));
+
+            document.getElementById('selectedItem').textContent = '未选择';
+            document.getElementById('tokenAmount').textContent = '0';
+            document.getElementById('bonusAmount').textContent = '0';
+            document.getElementById('totalPrice').textContent = '¥0';
+            document.getElementById('payBtn').disabled = true;
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-item').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            const footerInfo = document.querySelector('.footer-info');
+            
+            if (tab === 'recharge') {
+                document.getElementById('recharge-content').classList.add('active');
+                footerInfo.classList.add('show');
+            } else if (tab === 'points') {
+                document.getElementById('points-content').classList.add('active');
+                footerInfo.classList.remove('show');
+            } else if (tab === 'activity') {
+                document.getElementById('activity-content').classList.add('active');
+                footerInfo.classList.remove('show');
+            }
+
+            resetSelection();
+        }
+
+        function switchRechargeTab(tab) {
+            document.querySelectorAll('.recharge-tab-item').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            document.querySelectorAll('.recharge-tab-content').forEach(content => content.classList.remove('active'));
+            if (tab === 'tier') {
+                document.getElementById('tier-tab').classList.add('active');
+            } else if (tab === 'gift') {
+                document.getElementById('gift-tab').classList.add('active');
+            }
+
+            resetSelection();
+        }
+
+        function showDrawer() {
+            document.getElementById('orderDrawer').classList.add('show');
+        }
+
+        function closeDrawer() {
+            document.getElementById('orderDrawer').classList.remove('show');
+        }
+
+        function handlePay() {
+            if (!selectedType || !selectedId) {
+                alert('请先选择商品');
+                return;
+            }
+
+            const paymentName = selectedPaymentMethod === 'wechat' ? '微信支付' : '支付宝';
+            alert(`准备支付：${currentName}\n金额：¥${currentPrice}\n代币：${currentTokens}\n赠送：${currentBonus}\n支付方式：${paymentName}`);
+        }
+
+        // 添加到桌面功能
+        let deferredPrompt;
+        
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+        });
+
+        function addToHomeScreen() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        alert('感谢您添加到桌面！');
+                    }
+                    deferredPrompt = null;
+                });
+            } else {
+                // 针对不同浏览器的提示
+                const ua = navigator.userAgent.toLowerCase();
+                if (ua.indexOf('micromessenger') > -1) {
+                    alert('请点击右上角"..."菜单，选择"添加到桌面"');
+                } else if (ua.indexOf('safari') > -1 && ua.indexOf('chrome') === -1) {
+                    alert('请点击底部分享按钮，选择"添加到主屏幕"');
+                } else if (ua.indexOf('android') > -1) {
+                    alert('请点击浏览器菜单，选择"添加到主屏幕"');
+                } else {
+                    alert('请使用浏览器的"添加到主屏幕"功能\n\n操作方法：\n1. 点击浏览器菜单\n2. 选择"添加到主屏幕"或"添加到桌面"\n3. 确认添加');
+                }
+            }
+        }
+
+        // 积分商城相关函数
+        function switchPointsMallTab(tab) {
+            document.querySelectorAll('.points-mall-tab').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            document.querySelectorAll('.points-mall-content').forEach(content => content.classList.remove('active'));
+            if (tab === 'pool') {
+                document.getElementById('pool-content').classList.add('active');
+            } else if (tab === 'myexchange') {
+                document.getElementById('myexchange-content').classList.add('active');
+            }
+        }
+
+        function switchPoolTab(tab) {
+            document.querySelectorAll('.pool-tab').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            document.querySelectorAll('.pool-content').forEach(content => content.classList.remove('active'));
+            if (tab === 'all') {
+                document.getElementById('all-pool').classList.add('active');
+            } else if (tab === 'available') {
+                document.getElementById('available-pool').classList.add('active');
+            }
+        }
+
+        function exchangeItem(itemId) {
+            // 检查是否已登录
+            if (!currentRoleId) {
+                showModal('loginModal');
+                return;
+            }
+
+            const items = {
+                1: { name: '稀有装备礼包', points: 5000 },
+                2: { name: '经验药水礼包', points: 2000 },
+                4: { name: '材料包', points: 1000 }
+            };
+
+            const item = items[itemId];
+            if (item) {
+                if (confirm(`确认使用 ${item.points} 积分兑换 ${item.name} 吗？`)) {
+                    alert(`兑换成功！\n商品：${item.name}\n消耗积分：${item.points}\n\n奖励将在24小时内发放至游戏邮箱，请注意查收！`);
+                }
+            }
+        }
+
+        // 活动中心相关函数
+        function switchActivityTab(tab) {
+            document.querySelectorAll('.activity-tab-item').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            document.querySelectorAll('.activity-tab-content').forEach(content => content.classList.remove('active'));
+            if (tab === 'wheel') {
+                document.getElementById('wheel-tab').classList.add('active');
+            } else if (tab === 'avatar') {
+                document.getElementById('avatar-tab').classList.add('active');
+            } else if (tab === 'cumulative') {
+                document.getElementById('cumulative-tab').classList.add('active');
+            }
+        }
+
+        // 转盘抽奖相关
+        let isSpinning = false;
+        const prizes = [
+            { name: '稀有武器', count: '×1' },
+            { name: '金币', count: '×5000' },
+            { name: '经验药水', count: '×3' },
+            { name: '强化石', count: '×10' },
+            { name: '传说装备', count: '×1' },
+            { name: '材料包', count: '×5' },
+            { name: '宝石', count: '×20' },
+            { name: '代币', count: '×100' }
+        ];
+
+        function spinWheel() {
+            if (isSpinning) return;
+            
+            if (!currentRoleId) {
+                showModal('loginModal');
+                return;
+            }
+
+            isSpinning = true;
+            const wheel = document.getElementById('luckyWheel');
+            const prizeIndex = Math.floor(Math.random() * 8);
+            const baseRotation = 360 * 5; // 转5圈
+            const prizeRotation = 360 - (prizeIndex * 45) - 22.5; // 每个奖品45度
+            const totalRotation = baseRotation + prizeRotation;
+
+            wheel.style.transform = `rotate(${totalRotation}deg)`;
+
+            setTimeout(() => {
+                isSpinning = false;
+                const prize = prizes[prizeIndex];
+                alert(`🎉 恭喜您抽中：${prize.name} ${prize.count}！\n\n奖励将发放至游戏邮箱，请注意查收！`);
+                wheel.style.transform = `rotate(${totalRotation % 360}deg)`;
+            }, 3000);
+        }
+
+        function freeSpinWheel() {
+            if (!currentRoleId) {
+                showModal('loginModal');
+                return;
+            }
+            spinWheel();
+        }
+
+        function spinWheelTen() {
+            if (!currentRoleId) {
+                showModal('loginModal');
+                return;
+            }
+            
+            if (confirm('确认消耗5000积分进行10次抽奖吗？')) {
+                alert('抽奖10次功能触发！\n\n实际应用中会连续抽奖10次并展示所有奖励。');
+            }
+        }
+
+        // 头像框领取
+        function claimAvatarReward() {
+            if (!currentRoleId) {
+                showModal('loginModal');
+                return;
+            }
+            
+            alert('领取成功！\n\n专属头像框已发放至游戏邮箱，请登录游戏查收！');
+        }
+
+        // 累充活动
+        function claimCumulativeReward(rewardId) {
+            if (!currentRoleId) {
+                showModal('loginModal');
+                return;
+            }
+            
+            alert(`领取成功！\n\n累充礼包${rewardId}已发放至游戏邮箱，请登录游戏查收！`);
+        }
+
+        function goToRecharge() {
+            // 切换到充值页面
+            document.querySelectorAll('.tab-item').forEach(item => item.classList.remove('active'));
+            document.querySelector('.tab-item:first-child').classList.add('active');
+            
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById('recharge-content').classList.add('active');
+        }
+
+        // 登录方式切换
+        function switchLoginTab(tab) {
+            document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.login-form-content').forEach(f => f.classList.remove('active'));
+            
+            event.currentTarget.classList.add('active');
+            
+            if (tab === 'phone') {
+                document.getElementById('phoneLoginForm').classList.add('active');
+            } else if (tab === 'account') {
+                document.getElementById('accountLoginForm').classList.add('active');
+            } else if (tab === 'roleid') {
+                document.getElementById('roleIdLoginForm').classList.add('active');
+            }
+        }
+
+        // 发送验证码
+        let countdown = 0;
+        function sendVerifyCode() {
+            const phoneInput = document.getElementById('phoneInput');
+            const phone = phoneInput.value;
+            
+            if (!phone || phone.length !== 11) {
+                alert('请输入正确的手机号');
+                return;
+            }
+            
+            if (countdown > 0) {
+                return;
+            }
+            
+            // 模拟发送验证码
+            alert('验证码已发送至 ' + phone);
+            
+            // 倒计时
+            countdown = 60;
+            const btn = document.getElementById('sendCodeBtn');
+            btn.disabled = true;
+            
+            const timer = setInterval(() => {
+                countdown--;
+                btn.textContent = countdown + '秒后重发';
+                
+                if (countdown <= 0) {
+                    clearInterval(timer);
+                    btn.disabled = false;
+                    btn.textContent = '发送验证码';
+                }
+            }, 1000);
+        }
+
+        // 手机号登录
+        function handlePhoneLogin(event) {
+            event.preventDefault();
+            
+            const phone = document.getElementById('phoneInput').value;
+            const code = document.getElementById('verifyCodeInput').value;
+            
+            // 模拟验证码验证
+            if (code !== '123456') {
+                alert('验证码错误！（提示：测试验证码为123456）');
+                return;
+            }
+            
+            // 设置登录方式
+            loginMethod = 'phone';
+            
+            // 模拟查询该手机号下的账号列表
+            const mockAccounts = [
+                { id: 'account001', name: '游戏账号001' },
+                { id: 'account002', name: '游戏账号002' },
+                { id: 'account003', name: '游戏账号003' }
+            ];
+            
+            // 显示账号选择弹窗
+            showAccountSelectModal(mockAccounts);
+        }
+
+        // 显示账号选择弹窗
+        function showAccountSelectModal(accounts) {
+            closeModal('loginModal');
+            
+            const accountList = document.getElementById('accountList');
+            accountList.innerHTML = accounts.map(account => `
+                <div class="account-item" onclick="selectAccount('${account.id}', '${account.name}')">
+                    <div class="account-item-info">
+                        <div class="account-item-name">${account.name}</div>
+                        <div class="account-item-id">账号ID: ${account.id}</div>
+                    </div>
+                    <div class="account-item-arrow">→</div>
+                </div>
+            `).join('');
+            
+            showModal('accountSelectModal');
+        }
+
+        // 选择账号
+        function selectAccount(accountId, accountName) {
+            closeModal('accountSelectModal');
+            
+            // 登录成功，显示用户信息
+            document.getElementById('loginBtnHeader').style.display = 'none';
+            document.getElementById('userInfo').classList.add('show');
+            
+            // 更新UI（手机号登录保留角色切换功能）
+            updateUIForLoginMethod();
+            
+            // 弹出角色选择抽屉
+            setTimeout(() => {
+                showRoleDrawer();
+            }, 300);
+        }
+
+        // 账密登录
+        function handleAccountLogin(event) {
+            event.preventDefault();
+            
+            const account = document.getElementById('accountInput').value;
+            const password = document.getElementById('passwordInput').value;
+            
+            // 设置登录方式
+            loginMethod = 'account';
+            
+            // 模拟账密验证
+            if (account === 'test' && password === '123456') {
+                closeModal('loginModal');
+                
+                // 登录成功，显示用户信息
+                document.getElementById('loginBtnHeader').style.display = 'none';
+                document.getElementById('userInfo').classList.add('show');
+                
+                // 更新UI（账密登录保留角色切换功能）
+                updateUIForLoginMethod();
+                
+                // 弹出角色选择抽屉
+                setTimeout(() => {
+                    showRoleDrawer();
+                }, 300);
+            } else {
+                alert('账号或密码错误！（提示：测试账号test，密码123456）');
+            }
+        }
+
+        // 角色ID验证登录
+        function handleRoleIdLogin(event) {
+            event.preventDefault();
+            
+            const roleId = document.getElementById('roleIdInput').value;
+            
+            // 设置登录方式
+            loginMethod = 'roleid';
+            
+            // 模拟角色ID验证
+            const mockRoles = {
+                '10001': { server: '一区-艾泽拉斯', name: '剑圣', level: 85 },
+                '10002': { server: '二区-洛丹伦', name: '法师', level: 80 },
+                '10003': { server: '三区-暴风城', name: '战士', level: 90 }
+            };
+            
+            const roleData = mockRoles[roleId];
+            if (roleData) {
+                closeModal('loginModal');
+                
+                // 登录成功，显示用户信息
+                document.getElementById('loginBtnHeader').style.display = 'none';
+                document.getElementById('userInfo').classList.add('show');
+                
+                // 直接设置角色信息（角色ID验证不需要选择角色）
+                currentRoleId = parseInt(roleId);
+                document.getElementById('roleName').textContent = roleData.name;
+                document.getElementById('roleServer').textContent = roleData.server;
+                document.getElementById('roleInfo').classList.add('show');
+                
+                // 更新订单抽屉中的角色信息
+                document.getElementById('drawerRoleName').textContent = roleData.name;
+                document.getElementById('drawerRoleServer').textContent = roleData.server;
+                document.getElementById('drawerRoleInfo').style.display = 'block';
+                
+                // 角色ID验证方式：隐藏切换角色按钮，修改为重新验证
+                updateUIForLoginMethod();
+                
+                alert('验证成功！角色：' + roleData.name);
+            } else {
+                alert('角色ID不存在！（提示：测试角色ID为10001、10002、10003）');
+            }
+        }
+
+        // 根据登录方式更新UI
+        function updateUIForLoginMethod() {
+            const dropdown = document.getElementById('userDropdown');
+            const changeRoleBtns = document.querySelectorAll('.change-role-btn');
+            
+            if (loginMethod === 'roleid') {
+                // 角色ID验证：移除"充值记录"和"切换账号"，修改切换角色按钮文本
+                dropdown.innerHTML = `
+                    <div class="dropdown-item" onclick="logout()">退出登录</div>
+                `;
+                
+                // 修改切换角色按钮为重新验证
+                changeRoleBtns.forEach(btn => {
+                    btn.textContent = '重新验证';
+                    btn.onclick = function() {
+                        // 弹出登录弹窗并停留在角色ID验证tab
+                        showModal('loginModal');
+                        switchLoginTab('roleid');
+                    };
+                });
+            } else {
+                // 手机号/账密登录：保留完整功能
+                dropdown.innerHTML = `
+                    <div class="dropdown-item" onclick="switchAccount()">切换账号</div>
+                    <div class="dropdown-item" onclick="logout()">退出登录</div>
+                `;
+                
+                // 恢复切换角色按钮
+                changeRoleBtns.forEach(btn => {
+                    btn.textContent = '切换';
+                    btn.onclick = function() {
+                        showRoleDrawer();
+                    };
+                });
+            }
+        }
+
+        // 礼包详情弹窗功能
+        const giftDetails = {
+            1: {
+                name: '夏日钓鱼648礼包',
+                price: 648,
+                time: '2025-08-02 至 2025-09-09',
+                items: [
+                    { name: '代币', count: '×6480', image: 'daibi.png' },
+                    { name: '专属道具', count: '×5', image: 'libao.png' },
+                    { name: '稀有材料', count: '×10', image: 'libao.png' },
+                    { name: '金币', count: '×50000', image: 'libao.png' },
+                    { name: '经验药水', count: '×20', image: 'libao.png' },
+                    { name: '强化石', count: '×15', image: 'libao.png' }
+                ]
+            },
+            2: {
+                name: '夏日钓鱼500礼包',
+                price: 500,
+                time: '2025-08-02 至 2025-09-09',
+                items: [
+                    { name: '代币', count: '×5000', image: 'daibi.png' },
+                    { name: '稀有道具', count: '×3', image: 'libao.png' },
+                    { name: '材料', count: '×8', image: 'libao.png' },
+                    { name: '金币', count: '×30000', image: 'libao.png' },
+                    { name: '经验药水', count: '×10', image: 'libao.png' }
+                ]
+            },
+            3: {
+                name: '新手礼包',
+                price: 98,
+                time: '永久有效',
+                items: [
+                    { name: '代币', count: '×980', image: 'daibi.png' },
+                    { name: '新手装备', count: '×1', image: 'libao.png' },
+                    { name: '经验药水', count: '×5', image: 'libao.png' },
+                    { name: '金币', count: '×10000', image: 'libao.png' }
+                ]
+            },
+            4: {
+                name: '月卡礼包',
+                price: 30,
+                time: '30天有效期',
+                items: [
+                    { name: '每日代币', count: '×100', image: 'daibi.png' },
+                    { name: '连续天数', count: '×30天', image: 'libao.png' },
+                    { name: '总计代币', count: '×3000', image: 'daibi.png' }
+                ]
+            }
+        };
+
+        function showGiftDetail(giftId) {
+            const gift = giftDetails[giftId];
+            if (!gift) return;
+
+            // 更新礼包详情信息
+            document.getElementById('giftDetailName').textContent = gift.name;
+            document.getElementById('giftDetailPrice').textContent = '¥' + gift.price;
+            document.getElementById('giftDetailTime').textContent = gift.time;
+
+            // 生成礼包物品列表
+            const itemsGrid = document.getElementById('giftItemsGrid');
+            itemsGrid.innerHTML = gift.items.map(item => `
+                <div class="gift-item-card">
+                    <div class="gift-item-image">
+                        <img src="${item.image}" alt="${item.name}">
+                    </div>
+                    <div class="gift-item-name">${item.name}</div>
+                    <div class="gift-item-count">${item.count}</div>
+                </div>
+            `).join('');
+
+            // 显示弹窗
+            showModal('giftDetailModal');
+        }
+
+        function buyGiftFromDetail() {
+            // 关闭详情弹窗
+            closeModal('giftDetailModal');
+            
+            // 触发礼包购买
+            const giftId = Object.keys(giftDetails).find(id => 
+                giftDetails[id].name === document.getElementById('giftDetailName').textContent
+            );
+            
+            if (giftId) {
+                // 找到对应的礼包卡片并触发点击
+                const giftCards = document.querySelectorAll('.gift-card');
+                giftCards[parseInt(giftId) - 1]?.click();
+            }
+        }
+
+        // 点击页面其他地方关闭下拉菜单
+        document.addEventListener('click', function(event) {
+            const userInfo = document.getElementById('userInfo');
+            const dropdown = document.getElementById('userDropdown');
+            if (!userInfo.contains(event.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
+    </script>
+
+    <!-- PRD Float Button -->
+    <button id="prdFloatBtn" onclick="openPrdPanel()" title="查看PRD文档">PRD</button>
+
+    <!-- PRD 文档侧面板 -->
+    <div id="prdPanel">
+        <div id="prdPanelHeader">
+            <span>📄 PRD 文档</span>
+            <button onclick="closePrdPanel()">✕</button>
+        </div>
+        <div id="prdPanelMain">
+            <div id="prdVersionSidebar">
+                <div class="prd-version-title">版本历史</div>
+                <ul id="prdVersionList">
+            <li class="prd-version-item active" onclick="switchPrdVersion(0)" title="v1.0 (最新)">
+                <div class="prd-version-label">v1.0 (最新)</div>
+                <div class="prd-version-date">2026-04-01</div>
+            </li>
+                </ul>
+                <div id="prdTocBox">
+                    <div class="prd-toc-title">目录</div>
+                    <ul id="prdTocList"></ul>
+                </div>
+            </div>
+            <div id="prdPanelBody">加载中…</div>
+        </div>
+    </div>
+
+    <style>
+        #prdFloatBtn {
+            position: fixed;
+            top: 12px;
+            left: calc(50% + 252px);
+            writing-mode: horizontal-tb;
+            padding: 7px 14px;
+            background: #722ed1;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            cursor: pointer;
+            z-index: 8000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+            transition: background 0.2s;
+        }
+        #prdFloatBtn:hover { background: #531dab; }
+
+        #prdPanel {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 680px;
+            max-width: 100vw;
+            height: 100vh;
+            background: #fff;
+            box-shadow: -4px 0 24px rgba(0,0,0,0.18);
+            z-index: 9000;
+            flex-direction: column;
+        }
+        #prdPanel.show { display: flex; }
+
+        #prdPanelHeader {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 20px;
+            background: #722ed1;
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        #prdPanelHeader button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        #prdPanelMain {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        #prdVersionSidebar {
+            width: 160px;
+            flex-shrink: 0;
+            background: #f9f0ff;
+            border-right: 1px solid #e9d8fd;
+            overflow-y: auto;
+            padding: 12px 0;
+        }
+        .prd-version-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #722ed1;
+            padding: 0 14px 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #e9d8fd;
+            margin-bottom: 4px;
+        }
+        #prdVersionList {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .prd-version-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: background 0.15s;
+        }
+        .prd-version-item:hover {
+            background: #efe5ff;
+        }
+        .prd-version-item.active {
+            background: #efe5ff;
+            border-left-color: #722ed1;
+        }
+        .prd-version-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #333;
+        }
+        .prd-version-item.active .prd-version-label {
+            color: #722ed1;
+        }
+        .prd-version-date {
+            font-size: 10px;
+            color: #999;
+            margin-top: 2px;
+        }
+        #prdTocBox {
+            border-top: 1px solid #e9d8fd;
+            margin-top: 6px;
+            padding-top: 8px;
+        }
+        .prd-toc-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #722ed1;
+            padding: 0 14px 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        #prdTocList {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .prd-toc-item {
+            padding: 5px 14px;
+            cursor: pointer;
+            font-size: 11px;
+            line-height: 1.4;
+            color: #555;
+            border-left: 3px solid transparent;
+            transition: background 0.15s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .prd-toc-item:hover {
+            background: #efe5ff;
+            color: #722ed1;
+        }
+        .prd-toc-item.toc-h3 {
+            padding-left: 24px;
+            color: #888;
+            font-size: 10.5px;
+        }
+        .prd-toc-item.toc-h3:hover { color: #722ed1; }
+        .prd-toc-item.toc-active {
+            background: #efe5ff;
+            border-left-color: #722ed1;
+            color: #722ed1;
+        }
+
+        #prdPanelBody {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+            -webkit-overflow-scrolling: touch;
+            padding: 24px 28px;
+            font-size: 14px;
+            line-height: 1.8;
+            color: #333;
+        }
+        #prdPanelBody h1 { font-size: 20px; margin: 0 0 16px; color: #1a1a1a; }
+        #prdPanelBody h2 { font-size: 17px; margin: 28px 0 10px; color: #222; border-bottom: 2px solid #f0f0f0; padding-bottom: 6px; }
+        #prdPanelBody h3 { font-size: 15px; margin: 20px 0 8px; color: #333; }
+        #prdPanelBody h4 { font-size: 14px; margin: 16px 0 6px; color: #444; }
+        #prdPanelBody table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 13px; }
+        #prdPanelBody th { background: #f5f0ff; color: #531dab; padding: 7px 10px; text-align: left; border: 1px solid #e8e0f5; }
+        #prdPanelBody td { padding: 6px 10px; border: 1px solid #eee; vertical-align: top; }
+        #prdPanelBody tr:nth-child(even) td { background: #fafafa; }
+        #prdPanelBody code { background: #f5f5f5; padding: 1px 5px; border-radius: 3px; font-size: 12px; color: #c41d7f; }
+        #prdPanelBody pre { background: #f6f8fa; border-radius: 6px; padding: 14px; overflow-x: auto; font-size: 12px; line-height: 1.6; margin: 10px 0; }
+        #prdPanelBody pre code { background: none; padding: 0; color: #333; }
+        #prdPanelBody blockquote { border-left: 3px solid #722ed1; margin: 8px 0; padding: 6px 14px; background: #f9f0ff; color: #555; border-radius: 0 4px 4px 0; }
+        #prdPanelBody ul, #prdPanelBody ol { padding-left: 20px; margin: 6px 0; }
+        #prdPanelBody li { margin: 3px 0; }
+        #prdPanelBody hr { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+        #prdPanelBody a { color: #722ed1; }
+        #prdPanelBody strong { font-weight: 700; color: #1a1a1a; }
+    </style>
+
+    <script>
+        var prdVersions = [
+        {label:"v1.0 (最新)",date:"2026-04-01",content:"# 游戏充值中心系统（国内版）- 产品需求文档 (PRD)\r\n\r\n## 1. 产品概述\r\n\r\n### 1.1 产品定位\r\n游戏充值中心（国内版）是一个面向中国大陆玩家的在线充值服务平台，为玩家提供便捷、安全的游戏代币充值和道具礼包购买服务，同时提供积分商城和活动中心等增值服务。\r\n\r\n### 1.2 产品目标\r\n- **提升充值转化率**：简化充值流程，支持多种登录方式，降低用户操作门槛\r\n- **增加用户粘性**：通过积分商城、活动中心等功能提升用户留存和复购率\r\n- **提高用户LTV**：通过累充活动、限时礼包等营销手段提升用户生命周期价值\r\n- **保障交易安全**：集成微信支付、支付宝，确保交易安全可靠\r\n\r\n### 1.3 产品价值\r\n- **对玩家**：提供便捷的充值渠道，享受充值优惠和活动奖励，积分可兑换游戏道具\r\n- **对运营方**：提升充值收入，降低运营成本，提高用户LTV，增强用户粘性\r\n- **对游戏方**：增强游戏变现能力，提升玩家付费意愿，延长游戏生命周期\r\n\r\n---\r\n\r\n## 2. 用户角色\r\n\r\n### 2.1 新手玩家\r\n- **特征**：首次充值，对充值流程不熟悉，对游戏内容了解有限\r\n- **需求**：简单易懂的充值流程、新手礼包、充值说明、客服支持\r\n- **痛点**：不知道如何充值、不了解充值优惠规则、担心充值安全\r\n- **解决方案**：提供新手礼包、底部充值说明、添加到桌面引导\r\n\r\n### 2.2 普通玩家\r\n- **特征**：偶尔充值，单次充值金额中等，对价格敏感\r\n- **需求**：快速充值、优惠活动、积分兑换、充值记录查询\r\n- **痛点**：充值流程复杂、优惠力度不够、积分使用不便\r\n- **解决方案**：简化充值流程、提供限时礼包、积分商城、活动中心\r\n\r\n### 2.3 高价值玩家\r\n- **特征**：充值频繁，单次充值金额高，对游戏投入度高\r\n- **需求**：VIP特权、专属优惠、批量购买、充值排行榜\r\n- **痛点**：缺少专属服务、优惠力度不够、充值上限限制\r\n- **解决方案**：提供高额档位、累充活动、批量购买功能\r\n\r\n### 2.4 活动玩家\r\n- **特征**：喜欢参与活动，对积分和奖励敏感\r\n- **需求**：丰富的活动类型、积分兑换、转盘抽奖、累充奖励\r\n- **痛点**：活动单一、积分获取困难、奖励不吸引人\r\n- **解决方案**：活动中心（转盘抽奖、充值送头像框、累充活动）、积分商城\r\n\r\n---\r\n\r\n## 3. 功能需求\r\n\r\n### 3.1 登录认证模块\r\n\r\n#### 3.1.1 手机号登录\r\n**功能描述**：使用手机号+验证码登录，适合首次登录或忘记密码的用户\r\n\r\n**流程**：\r\n1. 输入手机号\r\n2. 点击\"获取验证码\"按钮\r\n3. 输入验证码\r\n4. 勾选用户协议、隐私政策、儿童隐私政策\r\n5. 点击\"登录\"按钮\r\n6. 选择账号（如果该手机号绑定多个账号）\r\n7. 选择服务器和角色\r\n\r\n**交互规则**：\r\n- 验证码60秒倒计时，倒计时期间按钮禁用\r\n- 倒计时结束后显示\"重新发送\"\r\n- 验证码输入错误3次后锁定5分钟\r\n- 必须勾选所有协议才能登录\r\n- 测试验证码：123456\r\n\r\n**优先级**：P0\r\n\r\n#### 3.1.2 账密登录\r\n**功能描述**：使用账号+密码登录，适合老用户快速登录\r\n\r\n**流程**：\r\n1. 输入账号\r\n2. 输入密码\r\n3. 勾选用户协议、隐私政策、儿童隐私政策\r\n4. 点击\"登录\"按钮\r\n5. 选择服务器和角色\r\n\r\n**交互规则**：\r\n- 密码输入错误3次后锁定5分钟\r\n- 必须勾选所有协议才能登录\r\n- 测试账号：test，密码：123456\r\n\r\n**优先级**：P0\r\n\r\n#### 3.1.3 角色ID验证\r\n**功能描述**：直接输入角色ID验证登录，适合快速充值场景\r\n\r\n**流程**：\r\n1. 输入角色ID\r\n2. 点击\"验证\"按钮\r\n3. 验证成功，显示角色信息\r\n\r\n**交互规则**：\r\n- 验证失败提示\"角色ID不存在\"\r\n- 验证成功后显示服务器名称、角色名称、积分余额\r\n- 测试角色ID：10001、10002、10003\r\n\r\n**优先级**：P0\r\n\r\n#### 3.1.4 协议勾选\r\n**功能描述**：用户必须勾选协议才能登录\r\n\r\n**协议列表**：\r\n- 用户协议\r\n- 隐私政策\r\n- 儿童隐私政策\r\n\r\n**交互规则**：\r\n- 协议文本为蓝色链接，点击弹出协议详情\r\n- 必须勾选所有协议才能点击登录按钮\r\n- 未勾选时登录按钮禁用\r\n\r\n**优先级**：P0\r\n\r\n### 3.2 角色管理模块\r\n\r\n#### 3.2.1 角色选择抽屉\r\n**功能描述**：手机号/账密登录后，选择服务器和角色\r\n\r\n**布局**：\r\n- 左侧：服务器列表（垂直滚动）\r\n- 右侧：角色列表（垂直滚动）\r\n\r\n**服务器列表**：\r\n- 一区-艾泽拉斯\r\n- 二区-洛丹伦\r\n- 三区-暴风城\r\n- 四区-铁炉堡\r\n\r\n**角色信息**：\r\n- 角色名称\r\n- 角色等级\r\n\r\n**交互规则**：\r\n- 点击服务器切换右侧角色列表\r\n- 当前选中服务器高亮显示（蓝色背景）\r\n- 点击角色选中，关闭抽屉\r\n- 抽屉从底部弹出，支持下拉关闭\r\n\r\n**优先级**：P0\r\n\r\n#### 3.2.2 角色信息展示\r\n**功能描述**：展示当前登录角色的基本信息\r\n\r\n**展示内容**：\r\n- 角色名称\r\n- 服务器名称\r\n- 积分余额\r\n\r\n**切换按钮**：\r\n- 手机号/账密登录：显示\"切换角色\"按钮\r\n- 角色ID验证：显示\"重新验证\"按钮\r\n\r\n**交互规则**：\r\n- 点击\"切换角色\"打开角色选择抽屉\r\n- 点击\"重新验证\"清空角色信息，返回角色ID输入状态\r\n\r\n**优先级**：P0\r\n\r\n### 3.3 充值模块\r\n\r\n#### 3.3.1 代币充值\r\n**功能描述**：购买游戏代币，支持批量购买\r\n\r\n**档位配置**：\r\n| 档位 | 价格 | 代币 | 赠送 | 积分 | 赠送比例 |\r\n|-----|------|------|------|------|---------|\r\n| 1 | ¥6 | 60 | 0 | 600 | 0% |\r\n| 2 | ¥30 | 300 | 30 | 3000 | 10% |\r\n| 3 | ¥98 | 980 | 196 | 9800 | 20% |\r\n| 4 | ¥328 | 3280 | 984 | 32800 | 30% |\r\n| 5 | ¥648 | 6480 | 2592 | 64800 | 40% |\r\n\r\n**卡片布局**：\r\n- 顶部：积分徽章（紫色渐变）\r\n- 中间：代币图标 + 代币数量 + 赠送图标 + 赠送数量\r\n- 底部：价格 + 货币单位\r\n\r\n**交互规则**：\r\n- 点击档位卡片选中，再次点击取消选中\r\n- 选中后边框变蓝，背景浅蓝色\r\n- 选中后弹出订单抽屉\r\n- 支持批量购买，数量范围1-99\r\n- 批量购买时，代币、赠送、积分按数量倍增\r\n\r\n**优先级**：P0\r\n\r\n#### 3.3.2 限时礼包\r\n**功能描述**：购买道具礼包，获得游戏道具和代币\r\n\r\n**礼包配置**：\r\n| 礼包名称 | 价格 | 内容 | 限购 | 积分 | 活动时间 |\r\n|---------|------|------|------|------|---------|\r\n| 夏日钓鱼648礼包 | ¥648 | 6480代币、专属道具×5、稀有材料×10、金币×50000、经验药水×20、强化石×15 | 3次 | 64800 | 2025-08-02 至 2025-09-09 |\r\n| 夏日钓鱼500礼包 | ¥500 | 5000代币、稀有道具×3、材料×8、金币×30000、经验药水×10 | 5次 | 50000 | 2025-08-02 至 2025-09-09 |\r\n| 新手礼包 | ¥98 | 980代币、新手装备×1、经验药水×5、金币×10000 | 1次 | 9800 | 长期 |\r\n| 月卡礼包 | ¥30 | 每日领取100代币，连续30天 | 不限 | 3000 | 长期 |\r\n\r\n**卡片布局**：\r\n- 礼包图片（120×120px）\r\n- 礼包名称\r\n- 礼包价格\r\n- 限购信息\r\n- 活动时间\r\n\r\n**交互规则**：\r\n- 点击礼包卡片选中\r\n- 点击礼包图片弹出详情弹窗\r\n- 选中后弹出订单抽屉\r\n- 支持批量购买，需校验限购次数\r\n\r\n**优先级**：P0\r\n\r\n#### 3.3.3 礼包详情弹窗\r\n**功能描述**：展示礼包内所有物品的详细信息\r\n\r\n**展示内容**：\r\n- 礼包主图（大图）\r\n- 礼包名称\r\n- 礼包价格\r\n- 活动时间\r\n- 礼包物品列表（3列网格布局）\r\n  - 物品图片\r\n  - 物品名称\r\n  - 物品数量\r\n\r\n**交互规则**：\r\n- 点击礼包图片弹出\r\n- 点击遮罩层或关闭按钮关闭\r\n- 点击\"立即购买\"按钮关闭弹窗，触发礼包购买\r\n\r\n**优先级**：P1\r\n\r\n### 3.4 支付模块\r\n\r\n#### 3.4.1 订单抽屉\r\n**功能描述**：展示订单详情，确认后支付\r\n\r\n**展示内容**：\r\n- 角色信息（角色名称、服务器）\r\n- 代币数量（代币充值）\r\n- 赠送代币（代币充值）\r\n- 礼包名称（礼包购买）\r\n- 礼包内容（礼包购买）\r\n- 赠送积分\r\n- 购买数量（支持增减）\r\n- 支付方式选择\r\n- 总金额\r\n\r\n**交互规则**：\r\n- 从底部弹出，支持下拉关闭\r\n- 购买数量：点击+/-按钮调整，范围1-99\r\n- 切换角色：关闭抽屉，返回角色选择\r\n- 立即支付：选择支付方式后才可点击\r\n\r\n**优先级**：P0\r\n\r\n#### 3.4.2 支付方式\r\n**功能描述**：选择支付方式完成支付\r\n\r\n**支付选项**：\r\n- 微信支付：显示微信支付图标\r\n- 支付宝：显示支付宝图标\r\n\r\n**交互规则**：\r\n- 点击选中，再次点击取消选中\r\n- 选中后边框变蓝，背景浅蓝色\r\n- 必须选择支付方式才能点击\"立即支付\"按钮\r\n\r\n**优先级**：P0\r\n\r\n### 3.5 积分商城模块\r\n\r\n#### 3.5.1 兑换池\r\n**功能描述**：使用积分兑换游戏道具\r\n\r\n**商品列表**：\r\n| 商品名称 | 积分 | 限兑 | 库存 | 内容 |\r\n|---------|------|------|------|------|\r\n| 稀有装备礼包 | 5000 | 3次 | 50 | 稀有武器×1、防具×1、强化石×10 |\r\n| 经验药水礼包 | 2000 | 5次 | 100 | 大型经验药水×5、中型经验药水×10 |\r\n| 传说宝箱 | 10000 | 1次 | 10 | 传说装备×1、稀有材料×20、金币×50000 |\r\n| 材料包 | 1000 | 不限 | 999 | 铁矿石×50、木材×50、布料×30 |\r\n\r\n**筛选功能**：\r\n- 默认：显示所有商品\r\n- 可兑换：积分足够且未达限兑次数\r\n\r\n**交互规则**：\r\n- 点击\"兑换\"按钮确认兑换\r\n- 兑换成功后扣除积分\r\n- 商品发放至游戏邮箱\r\n- 兑换记录保存到\"我的兑换\"\r\n\r\n**优先级**：P1\r\n\r\n#### 3.5.2 我的兑换\r\n**功能描述**：查看兑换记录\r\n\r\n**展示内容**：\r\n- 兑换时间\r\n- 活动名称\r\n- 消耗积分\r\n- 兑换物品\r\n- 兑换状态（兑换成功/待发放）\r\n\r\n**优先级**：P1\r\n\r\n#### 3.5.3 活动规则\r\n**功能描述**：展示积分商城的活动规则\r\n\r\n**规则内容**：\r\n- 兑换明细：积分获取方式、兑换限制\r\n- 奖励发放：发放时间、邮件保留期\r\n- 注意事项：退换政策、积分有效期\r\n\r\n**优先级**：P2\r\n\r\n### 3.6 活动中心模块\r\n\r\n#### 3.6.1 限时转盘\r\n**功能描述**：消耗积分抽奖，获得游戏道具\r\n\r\n**奖品列表**（8个奖品位）：\r\n- 稀有武器×1\r\n- 金币×5000\r\n- 经验药水×3\r\n- 强化石×10\r\n- 传说装备×1\r\n- 材料包×5\r\n- 宝石×20\r\n- 代币×100\r\n\r\n**抽奖方式**：\r\n- 免费抽奖：每日1次免费机会\r\n- 单次抽奖：消耗500积分\r\n- 抽奖10次：消耗5000积分\r\n\r\n**交互规则**：\r\n- 点击\"抽奖\"按钮开始旋转\r\n- 转盘旋转3秒后停止\r\n- 弹窗展示中奖结果\r\n- 奖品发放至游戏邮箱\r\n\r\n**喇叭播报**：\r\n- 滚动播报其他玩家中奖信息\r\n- 支持暂停（鼠标悬停）\r\n\r\n**优先级**：P1\r\n\r\n#### 3.6.2 充值送头像框\r\n**功能描述**：完成任意金额充值，领取专属头像框\r\n\r\n**活动规则**：\r\n- 完成任意金额充值即可领取\r\n- 每个账号仅可领取一次\r\n- 充值成功后等待3-5分钟刷新页面\r\n\r\n**按钮状态**：\r\n- 未充值：显示\"暂未充值，无法领取\"，禁用\r\n- 已充值未领取：显示\"立即领取\"，可点击\r\n- 已领取：显示\"已领取\"，禁用\r\n\r\n**交互规则**：\r\n- 点击\"立即领取\"按钮领取奖励\r\n- 头像框发放至游戏邮箱\r\n\r\n**优先级**：P1\r\n\r\n#### 3.6.3 累充活动\r\n**功能描述**：累计充值达标，领取奖励\r\n\r\n**奖励档位**：\r\n| 档位 | 累充金额 | 奖励内容 | 活动时间 |\r\n|-----|---------|---------|---------|\r\n| I | 100元 | 稀有武器×1、金币×10000、经验药水×5 | 2025-08-01 至 2025-09-30 |\r\n| II | 300元 | 传说装备×1、金币×30000、强化石×20 | 2025-08-01 至 2025-09-30 |\r\n| III | 500元 | 神话装备×1、金币×50000、宝石×50 | 2025-08-01 至 2025-09-30 |\r\n| IV | 1000元 | 至尊装备×1、金币×100000、专属称号×1 | 2025-08-01 至 2025-09-30 |\r\n\r\n**卡片状态**：\r\n- 未达成：显示\"前往充值\"按钮，进度条显示当前进度\r\n- 可领取：显示\"领取\"按钮，卡片高亮（蓝色边框）\r\n- 已领取：显示\"已领取\"按钮，禁用状态，卡片绿色背景\r\n\r\n**交互规则**：\r\n- 点击\"前往充值\"跳转到充值页面\r\n- 点击\"领取\"按钮领取奖励\r\n- 奖励发放至游戏邮箱\r\n\r\n**优先级**：P1\r\n\r\n### 3.7 其他功能\r\n\r\n#### 3.7.1 Banner轮播\r\n**功能描述**：展示活动Banner，支持轮播\r\n\r\n**配置**：\r\n- 高度：180px\r\n- 轮播点：底部居中显示\r\n- 自动轮播：3秒切换\r\n\r\n**交互规则**：\r\n- 点击轮播点切换Banner\r\n- 点击Banner跳转到活动页面\r\n\r\n**优先级**：P1\r\n\r\n#### 3.7.2 通知栏\r\n**功能描述**：滚动播报活动信息\r\n\r\n**配置**：\r\n- 样式：黄色渐变背景，左侧喇叭图标\r\n- 动画：从右向左滚动，20秒循环\r\n\r\n**交互规则**：\r\n- 点击关闭按钮隐藏通知栏\r\n- 鼠标悬停暂停滚动\r\n\r\n**优先级**：P2\r\n\r\n#### 3.7.3 添加到桌面\r\n**功能描述**：引导用户将网页添加到桌面\r\n\r\n**提示内容**：\r\n- 微信浏览器：点击右上角\"...\"菜单，选择\"添加到桌面\"\r\n- Safari：点击底部分享按钮，选择\"添加到主屏幕\"\r\n- Android：点击浏览器菜单，选择\"添加到主屏幕\"\r\n- 其他：显示通用操作方法\r\n\r\n**优先级**：P2\r\n\r\n#### 3.7.4 充值记录\r\n**功能描述**：查看充值记录\r\n\r\n**展示内容**：\r\n- 充值商品\r\n- 充值金额\r\n- 充值时间\r\n- 充值状态\r\n\r\n**交互规则**：\r\n- 点击用户头像下拉菜单中的\"充值记录\"查看\r\n\r\n**优先级**：P1\r\n\r\n#### 3.7.5 底部说明\r\n**功能描述**：展示充值相关说明\r\n\r\n**内容**：\r\n- 充值到账说明：充值成功后立即到账，特殊情况延迟5-10分钟\r\n- 售后服务：30分钟未到账联系客服，客服工作时间9:00-22:00\r\n- 温馨提示：确认角色和区服信息、充值后不支持退款、未成年人充值需监护人同意\r\n\r\n**优先级**：P2\r\n\r\n---\r\n\r\n## 4. 业务流程\r\n\r\n### 4.1 手机号登录充值流程\r\n\r\n```\r\n用户访问充值页面\r\n    ↓\r\n选择手机号登录\r\n    ↓\r\n输入手机号\r\n    ↓\r\n获取验证码\r\n    ↓\r\n输入验证码\r\n    ↓\r\n勾选协议\r\n    ↓\r\n点击登录\r\n    ↓\r\n选择账号（如有多个）\r\n    ↓\r\n选择服务器\r\n    ↓\r\n选择角色\r\n    ↓\r\n显示角色信息卡片\r\n    ↓\r\n选择充值类型（代币/礼包）\r\n    ↓\r\n选择档位/礼包\r\n    ↓\r\n[礼包] 点击图片查看详情\r\n    ↓\r\n订单抽屉弹出\r\n    ↓\r\n调整购买数量\r\n    ↓\r\n选择支付方式（微信/支付宝）\r\n    ↓\r\n确认订单信息\r\n    ↓\r\n点击立即支付\r\n    ↓\r\n跳转支付页面\r\n    ↓\r\n完成支付\r\n    ↓\r\n代币/道具到账\r\n    ↓\r\n积分到账\r\n```\r\n\r\n### 4.2 账密登录充值流程\r\n\r\n```\r\n用户访问充值页面\r\n    ↓\r\n选择账密登录\r\n    ↓\r\n输入账号密码\r\n    ↓\r\n勾选协议\r\n    ↓\r\n点击登录\r\n    ↓\r\n选择服务器\r\n    ↓\r\n选择角色\r\n    ↓\r\n显示角色信息卡片\r\n    ↓\r\n选择充值类型（代币/礼包）\r\n    ↓\r\n选择档位/礼包\r\n    ↓\r\n订单抽屉弹出\r\n    ↓\r\n调整购买数量\r\n    ↓\r\n选择支付方式\r\n    ↓\r\n确认订单信息\r\n    ↓\r\n点击立即支付\r\n    ↓\r\n跳转支付页面\r\n    ↓\r\n完成支付\r\n    ↓\r\n代币/道具到账\r\n    ↓\r\n积分到账\r\n```\r\n\r\n### 4.3 角色ID验证充值流程\r\n\r\n```\r\n用户访问充值页面\r\n    ↓\r\n选择角色ID验证\r\n    ↓\r\n输入角色ID\r\n    ↓\r\n点击验证\r\n    ↓\r\n验证成功，显示角色信息\r\n    ↓\r\n选择充值类型（代币/礼包）\r\n    ↓\r\n选择档位/礼包\r\n    ↓\r\n订单抽屉弹出\r\n    ↓\r\n调整购买数量\r\n    ↓\r\n选择支付方式\r\n    ↓\r\n确认订单信息\r\n    ↓\r\n点击立即支付\r\n    ↓\r\n跳转支付页面\r\n    ↓\r\n完成支付\r\n    ↓\r\n代币/道具到账\r\n    ↓\r\n积分到账\r\n```\r\n\r\n### 4.4 积分兑换流程\r\n\r\n```\r\n用户进入积分商城\r\n    ↓\r\n查看商品列表\r\n    ↓\r\n[可选] 筛选可兑换商品\r\n    ↓\r\n选择商品\r\n    ↓\r\n点击兑换按钮\r\n    ↓\r\n确认兑换\r\n    ↓\r\n扣除积分\r\n    ↓\r\n商品发放至游戏邮箱\r\n    ↓\r\n兑换记录保存\r\n```\r\n\r\n### 4.5 限时转盘抽奖流程\r\n\r\n```\r\n用户进入活动中心\r\n    ↓\r\n选择限时转盘\r\n    ↓\r\n[免费抽奖] 使用免费机会\r\n[积分抽奖] 消耗500积分\r\n[抽奖10次] 消耗5000积分\r\n    ↓\r\n转盘旋转\r\n    ↓\r\n展示中奖结果\r\n    ↓\r\n奖品发放至游戏邮箱\r\n```\r\n\r\n### 4.6 累充活动参与流程\r\n\r\n```\r\n用户累计充值\r\n    ↓\r\n进入活动中心\r\n    ↓\r\n选择累充活动\r\n    ↓\r\n查看当前进度\r\n    ↓\r\n[未达成] 前往充值\r\n[可领取] 点击领取按钮\r\n    ↓\r\n奖励发放至游戏邮箱\r\n```\r\n\r\n---\r\n\r\n## 5. 数据模型\r\n\r\n### 5.1 用户数据模型\r\n\r\n```javascript\r\nUser {\r\n  userId: string,           // 用户ID\r\n  phone: string,            // 手机号（手机号登录）\r\n  account: string,          // 账号（账密登录）\r\n  roleId: string,           // 角色ID\r\n  roleName: string,         // 角色名称\r\n  serverName: string,       // 服务器名称\r\n  points: number,           // 积分余额\r\n  loginMethod: string,      // 登录方式（phone/account/roleid）\r\n  createdAt: timestamp,     // 创建时间\r\n  lastLoginAt: timestamp    // 最后登录时间\r\n}\r\n```\r\n\r\n### 5.2 订单数据模型\r\n\r\n```javascript\r\nOrder {\r\n  orderId: string,          // 订单ID\r\n  userId: string,           // 用户ID\r\n  roleId: string,           // 角色ID\r\n  orderType: string,        // 订单类型（token/gift）\r\n  productId: string,        // 商品ID\r\n  productName: string,      // 商品名称\r\n  quantity: number,         // 购买数量\r\n  price: number,            // 单价（元）\r\n  totalPrice: number,       // 总价（元）\r\n  paymentMethod: string,    // 支付方式（wechat/alipay）\r\n  tokens: number,           // 代币数量\r\n  bonus: number,            // 赠送代币\r\n  points: number,           // 赠送积分\r\n  status: string,           // 订单状态（pending/paid/completed/failed）\r\n  createdAt: timestamp,     // 创建时间\r\n  paidAt: timestamp,        // 支付时间\r\n  completedAt: timestamp    // 完成时间\r\n}\r\n```\r\n\r\n### 5.3 代币档位数据模型\r\n\r\n```javascript\r\nTierData {\r\n  id: number,               // 档位ID\r\n  tokens: number,           // 代币数量\r\n  bonus: number,            // 赠送代币\r\n  price: number,            // 价格（元）\r\n  points: number            // 赠送积分\r\n}\r\n```\r\n\r\n### 5.4 礼包数据模型\r\n\r\n```javascript\r\nGiftPackage {\r\n  id: number,               // 礼包ID\r\n  name: string,             // 礼包名称\r\n  price: number,            // 价格（元）\r\n  items: array,             // 礼包内容\r\n  limit: string,            // 限购次数\r\n  points: number,           // 赠送积分\r\n  startTime: timestamp,     // 活动开始时间\r\n  endTime: timestamp        // 活动结束时间\r\n}\r\n\r\nGiftItem {\r\n  name: string,             // 物品名称\r\n  quantity: number,         // 物品数量\r\n  image: string             // 物品图片\r\n}\r\n```\r\n\r\n### 5.5 积分商品数据模型\r\n\r\n```javascript\r\nPointsProduct {\r\n  id: number,               // 商品ID\r\n  name: string,             // 商品名称\r\n  points: number,           // 所需积分\r\n  limit: string,            // 限兑次数\r\n  stock: number,            // 剩余库存\r\n  items: array              // 商品内容\r\n}\r\n```\r\n\r\n### 5.6 活动数据模型\r\n\r\n```javascript\r\nActivity {\r\n  id: string,               // 活动ID\r\n  type: string,             // 活动类型（wheel/avatar/cumulative）\r\n  name: string,             // 活动名称\r\n  startTime: timestamp,     // 开始时间\r\n  endTime: timestamp,       // 结束时间\r\n  status: string            // 活动状态（active/pending/ended）\r\n}\r\n\r\nCumulativeReward {\r\n  id: number,               // 奖励ID\r\n  threshold: number,        // 累充金额（元）\r\n  name: string,             // 奖励名称\r\n  items: array,             // 奖励内容\r\n  status: string            // 领取状态（available/claimed/locked）\r\n}\r\n```\r\n\r\n---\r\n\r\n## 6. 交互设计\r\n\r\n### 6.1 页面布局\r\n\r\n```\r\n+----------------------------------+\r\n|  Header（Logo + 添加到桌面 + 用户） |\r\n+----------------------------------+\r\n|  Banner（活动Banner轮播）          |\r\n+----------------------------------+\r\n|  通知栏（滚动播报）                 |\r\n+----------------------------------+\r\n|  角色信息卡片                      |\r\n|  （角色名称、服务器、积分余额）      |\r\n|  （切换角色/重新验证按钮）          |\r\n+----------------------------------+\r\n|  Tab切换（代币充值 / 限时礼包）      |\r\n+----------------------------------+\r\n|  档位/礼包列表（2列网格）           |\r\n+----------------------------------+\r\n|  底部说明                          |\r\n|  （充值到账说明、售后服务、温馨提示）|\r\n+----------------------------------+\r\n```\r\n\r\n### 6.2 交互规范\r\n\r\n#### 6.2.1 按钮交互\r\n- **点击反馈**：按钮点击时缩小至98%（transform: scale(0.98)）\r\n- **禁用状态**：灰色背景（#d9d9d9），不可点击\r\n- **加载状态**：显示loading图标，禁用点击\r\n- **按钮高度**：44px（符合iOS人机交互指南）\r\n\r\n#### 6.2.2 卡片交互\r\n- **选中状态**：蓝色边框（#1890ff），浅蓝色背景（#f0f7ff）\r\n- **悬停状态**：轻微阴影效果（box-shadow: 0 2px 8px rgba(0,0,0,0.1)）\r\n- **点击反馈**：缩小至98%\r\n\r\n#### 6.2.3 抽屉交互\r\n- **打开动画**：从底部滑入，300ms缓动（transition: transform 0.3s ease）\r\n- **关闭方式**：点击关闭按钮、点击遮罩层、下拉手势\r\n- **滚动行为**：内容超出时支持滚动\r\n\r\n#### 6.2.4 弹窗交互\r\n- **打开动画**：淡入 + 缩放，300ms\r\n- **关闭方式**：点击关闭按钮、点击遮罩层\r\n- **背景遮罩**：半透明黑色（rgba(0,0,0,0.5)）\r\n\r\n### 6.3 响应式设计\r\n\r\n#### 6.3.1 移动端适配\r\n- **最大宽度**：480px\r\n- **字体大小**：13px-20px\r\n- **按钮高度**：44px\r\n- **间距**：15px（卡片间距）、12px（元素间距）\r\n\r\n#### 6.3.2 横屏适配\r\n- 保持最大宽度480px\r\n- 内容居中显示\r\n\r\n---\r\n\r\n## 7. 非功能性需求\r\n\r\n### 7.1 性能要求\r\n- **页面加载时间**：首屏加载时间 < 2秒\r\n- **交互响应时间**：点击响应时间 < 100ms\r\n- **支付跳转时间**：支付页面跳转时间 < 1秒\r\n- **图片加载**：使用懒加载，优先加载首屏图片\r\n\r\n### 7.2 安全要求\r\n- **数据传输**：使用HTTPS加密传输\r\n- **支付安全**：集成官方支付SDK（微信JSAPI、支付宝H5），不存储支付密码\r\n- **用户隐私**：遵守《个人信息保护法》、《儿童个人信息网络保护规定》\r\n- **防刷单**：限制单用户单日充值次数和金额\r\n- **实名认证**：未成年人充值需实名认证和家长监护\r\n\r\n### 7.3 兼容性要求\r\n- **浏览器兼容**：Chrome、Safari、Firefox、Edge最新版本\r\n- **移动端兼容**：iOS 12+、Android 8+\r\n- **微信内置浏览器**：支持微信内打开和支付\r\n\r\n### 7.4 可用性要求\r\n- **系统可用性**：99.9%\r\n- **并发支持**：支持10000+并发用户\r\n- **数据备份**：每日自动备份，保留30天\r\n\r\n### 7.5 可维护性要求\r\n- **代码规范**：遵循ESLint规范\r\n- **文档完善**：API文档、部署文档、运维文档\r\n- **日志记录**：记录用户行为、错误日志、支付日志\r\n\r\n---\r\n\r\n## 8. 技术架构\r\n\r\n### 8.1 前端技术栈\r\n- **当前方案**：纯HTML + CSS + JavaScript\r\n- **推荐方案**：Vue 3 + TypeScript + Vite\r\n- **状态管理**：Pinia\r\n- **UI组件库**：Vant（移动端）\r\n- **HTTP客户端**：Axios\r\n- **支付SDK**：微信JSAPI、支付宝H5\r\n\r\n### 8.2 后端技术栈（建议）\r\n- **开发语言**：Node.js / Java / Go\r\n- **Web框架**：Express / Spring Boot / Gin\r\n- **数据库**：MySQL（订单数据）+ Redis（缓存）\r\n- **消息队列**：RabbitMQ / Kafka（订单处理）\r\n- **对象存储**：阿里云OSS（图片资源）\r\n\r\n### 8.3 部署架构（建议）\r\n- **CDN加速**：静态资源部署到阿里云CDN\r\n- **负载均衡**：Nginx + 多台应用服务器\r\n- **容器化**：Docker + Kubernetes\r\n- **监控告警**：Prometheus + Grafana\r\n\r\n### 8.4 第三方服务\r\n- **支付服务**：微信支付、支付宝\r\n- **短信服务**：阿里云短信、腾讯云短信\r\n- **客服系统**：美洽、网易七鱼\r\n- **数据分析**：友盟、神策数据\r\n\r\n---\r\n\r\n## 9. 项目里程碑\r\n\r\n### 9.1 Phase 1：MVP版本（4周）\r\n- [ ] 完成三种登录方式\r\n- [ ] 完成角色选择功能\r\n- [ ] 完成代币充值功能\r\n- [ ] 完成限时礼包功能\r\n- [ ] 集成微信支付、支付宝\r\n- [ ] 完成订单管理功能\r\n\r\n### 9.2 Phase 2：功能完善（4周）\r\n- [ ] 完成积分商城功能\r\n- [ ] 完成活动中心功能（转盘抽奖、充值送头像框、累充活动）\r\n- [ ] 完成充值记录查询功能\r\n- [ ] 完成礼包详情弹窗\r\n- [ ] 完成Banner轮播功能\r\n\r\n### 9.3 Phase 3：优化迭代（4周）\r\n- [ ] 性能优化（懒加载、缓存）\r\n- [ ] 用户体验优化（动画、交互）\r\n- [ ] 数据埋点和分析\r\n- [ ] A/B测试和转化率优化\r\n- [ ] 添加到桌面引导\r\n\r\n### 9.4 Phase 4：扩展功能（持续）\r\n- [ ] 添加更多支付方式\r\n- [ ] 实现优惠券功能\r\n- [ ] 实现推荐好友功能\r\n- [ ] 实现VIP会员功能\r\n- [ ] 实现充值排行榜功能\r\n\r\n---\r\n\r\n## 10. 风险与应对\r\n\r\n### 10.1 技术风险\r\n| 风险 | 影响 | 应对措施 |\r\n|-----|------|---------|\r\n| 支付接口不稳定 | 高 | 接入微信和支付宝双通道，实现降级方案 |\r\n| 并发量过大导致系统崩溃 | 高 | 使用负载均衡、限流、熔断机制 |\r\n| 第三方服务故障 | 中 | 实现服务降级和容错机制 |\r\n\r\n### 10.2 业务风险\r\n| 风险 | 影响 | 应对措施 |\r\n|-----|------|---------|\r\n| 充值转化率低 | 高 | 优化充值流程，增加优惠活动 |\r\n| 用户流失率高 | 中 | 增加积分商城、活动中心等留存功能 |\r\n| 恶意刷单 | 中 | 实现风控系统，限制充值频率 |\r\n\r\n### 10.3 合规风险\r\n| 风险 | 影响 | 应对措施 |\r\n|-----|------|---------|\r\n| 未成年人充值 | 高 | 实名认证、家长监护系统 |\r\n| 隐私数据泄露 | 高 | 数据加密、权限控制、安全审计 |\r\n| 支付合规 | 中 | 遵守《支付服务管理办法》等法规 |\r\n\r\n---\r\n\r\n## 11. 附录\r\n\r\n### 11.1 术语表\r\n- **代币**：游戏内虚拟货币，可用于购买道具和服务\r\n- **档位**：不同价格的代币充值套餐\r\n- **礼包**：包含多种游戏道具的组合商品\r\n- **积分**：充值赠送的虚拟积分，可用于兑换道具\r\n- **角色ID**：游戏内角色的唯一标识符\r\n\r\n### 11.2 参考文档\r\n- 微信支付开发文档：https://pay.weixin.qq.com/wiki/doc/api/\r\n- 支付宝开发文档：https://opendocs.alipay.com/\r\n- 个人信息保护法：http://www.npc.gov.cn/\r\n- 儿童个人信息网络保护规定：http://www.cac.gov.cn/\r\n\r\n---\r\n\r\n**文档版本**：v1.0  \r\n**创建日期**：2026-04-01  \r\n**最后更新**：2026-04-01  \r\n**文档作者**：产品团队\r\n"}
+        ];
+        var prdCurrentVersion = 0;
+        var prdLoaded = false;
+
+        function openPrdPanel() {
+            document.getElementById('prdPanel').classList.add('show');
+            if (!prdLoaded) { loadPrdVersion(0); prdLoaded = true; }
+        }
+
+        function closePrdPanel() {
+            document.getElementById('prdPanel').classList.remove('show');
+        }
+
+        function switchPrdVersion(idx) {
+            if (idx === prdCurrentVersion) return;
+            prdCurrentVersion = idx;
+            var items = document.querySelectorAll('.prd-version-item');
+            items.forEach(function(el, i) {
+                el.classList.toggle('active', i === idx);
+            });
+            loadPrdVersion(idx);
+        }
+
+        function loadPrdVersion(idx) {
+            var md = prdVersions[idx].content;
+            document.getElementById('prdPanelBody').innerHTML = renderMarkdown(md);
+            document.getElementById('prdPanelBody').scrollTop = 0;
+            buildToc();
+        }
+
+        function buildToc() {
+            var body = document.getElementById('prdPanelBody');
+            var tocList = document.getElementById('prdTocList');
+            if (!body || !tocList) return;
+            var headings = body.querySelectorAll('h2, h3');
+            var items = [];
+            headings.forEach(function(h, i) {
+                var anchorId = 'prd-anchor-' + i;
+                h.id = anchorId;
+                var level = h.tagName.toLowerCase(); // h2 or h3
+                var safeText = escAttr(h.textContent); var displayText = escHtml(h.textContent); items.push('<li class="prd-toc-item toc-' + level + '" onclick="scrollToc(\'' + anchorId + '\')" title="' + safeText + '">' + displayText + '</li>');
+            });
+            tocList.innerHTML = items.join('');
+        }
+
+        function scrollToc(anchorId) {
+            var body = document.getElementById('prdPanelBody');
+            var target = document.getElementById(anchorId);
+            if (!body || !target) return;
+            // highlight active
+            document.querySelectorAll('.prd-toc-item').forEach(function(el) {
+                el.classList.remove('toc-active');
+            });
+            // find which li corresponds — match by onclick attribute
+            var allItems = document.querySelectorAll('.prd-toc-item');
+            allItems.forEach(function(el) {
+                if (el.getAttribute('onclick') === "scrollToc('" + anchorId + "')") {
+                    el.classList.add('toc-active');
+                }
+            });
+            var bodyRect = body.getBoundingClientRect();
+            var targetRect = target.getBoundingClientRect();
+            body.scrollTo({ top: body.scrollTop + targetRect.top - bodyRect.top - 16, behavior: 'smooth' });
+        }
+
+        function renderTable(head, rows) {
+            const ths = head.split('|').slice(1, -1).map(c => `<th>${escHtml(c.trim())}</th>`).join('');
+            const trs = rows.map(r =>
+                '<tr>' + r.split('|').slice(1, -1).map(c => `<td>${escHtml(c.trim())}</td>`).join('') + '</tr>'
+            ).join('');
+            return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+        }
+
+        function escHtml(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+        function escAttr(s) {
+            return escHtml(s).replace(/"/g,'&quot;');
+        }
+
+        function inlineFmt(s) {
+            s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+            s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            return s;
+        }
+
+        function renderMarkdown(md) {
+            const lines = md.split('\n');
+            const out = [];
+            let inCode = false, codeBuf = [], inTable = false, tableHead = '', tableRows = [];
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+
+                // code block
+                if (line.startsWith('```')) {
+                    if (inCode) {
+                        out.push(`<pre><code>${escHtml(codeBuf.join('\n'))}</code></pre>`);
+                        inCode = false; codeBuf = [];
+                    } else { inCode = true; }
+                    continue;
+                }
+                if (inCode) { codeBuf.push(line); continue; }
+
+                // table
+                if (line.trim().startsWith('|')) {
+                    if (!inTable) { inTable = true; tableHead = line; tableRows = []; }
+                    else if (/^[\s|:-]+$/.test(line)) { /* separator, skip */ }
+                    else tableRows.push(line);
+                    continue;
+                } else if (inTable) {
+                    out.push(renderTable(tableHead, tableRows));
+                    inTable = false; tableHead = ''; tableRows = [];
+                }
+
+                if (!line.trim()) { out.push(''); continue; }
+                if (line.startsWith('#### ')) { out.push(`<h4>${escHtml(line.slice(5))}</h4>`); continue; }
+                if (line.startsWith('### '))  { out.push(`<h3>${escHtml(line.slice(4))}</h3>`); continue; }
+                if (line.startsWith('## '))   { out.push(`<h2>${escHtml(line.slice(3))}</h2>`); continue; }
+                if (line.startsWith('# '))    { out.push(`<h1>${escHtml(line.slice(2))}</h1>`); continue; }
+                if (line.startsWith('---'))   { out.push('<hr>'); continue; }
+                if (line.startsWith('> '))    { out.push(`<blockquote>${escHtml(line.slice(2))}</blockquote>`); continue; }
+
+                // list
+                if (line.match(/^(\s*[-*]\s)/)) {
+                    const items = [];
+                    while (i < lines.length && lines[i].match(/^(\s*[-*]\s)/)) {
+                        items.push(`<li>${inlineFmt(escHtml(lines[i].replace(/^\s*[-*]\s/, '')))}</li>`);
+                        i++;
+                    }
+                    i--;
+                    out.push('<ul>' + items.join('') + '</ul>');
+                    continue;
+                }
+                if (line.match(/^\d+\.\s/)) {
+                    const items = [];
+                    while (i < lines.length && lines[i].match(/^\d+\.\s/)) {
+                        items.push(`<li>${inlineFmt(escHtml(lines[i].replace(/^\d+\.\s/, '')))}</li>`);
+                        i++;
+                    }
+                    i--;
+                    out.push('<ol>' + items.join('') + '</ol>');
+                    continue;
+                }
+
+                // paragraph with inline formatting
+                let p = escHtml(line);
+                p = inlineFmt(p);
+                out.push(`<p>${p}</p>`);
+            }
+
+            // flush pending table
+            if (inTable) out.push(renderTable(tableHead, tableRows));
+
+            return out.join('\n');
+        }
+    </script>
+</body>
+</html>

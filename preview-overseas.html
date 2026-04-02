@@ -1,0 +1,3317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>游戏充值中心 - 海外版</title>
+    <!-- B端数据适配层：从localStorage读取B端配置，渲染真实数据 -->
+    <script>
+    (function() {
+        const p = new URLSearchParams(location.search);
+        const SITE = p.get('site') || '';
+
+        function ls(key) {
+            try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) { return []; }
+        }
+
+        // ── 读取B端配置 ───────────────────────────────────────
+        const siteList = ls('site_config_data');
+        const siteInfo = siteList.find(s => s.name === SITE) || {};
+        const allCoins = ls('coin_config_data').filter(c => c.siteName === SITE && c.status === 2);
+        const allGifts = ls('gift_config_data').filter(g => g.siteName === SITE && g.giftStatus === 2 && g.enabled !== false);
+        const banners  = ls('banner_config_data').filter(b => b.siteName === SITE && b.status === 2);
+        const notices  = ls('notification_config_data').filter(n => n.siteName === SITE && n.status === 2);
+
+        if (siteInfo.pageTitle) document.title = siteInfo.pageTitle;
+
+        // ── 货币符号映射 ──────────────────────────────────────
+        const currencySymbols = {
+            USD:'$', EUR:'€', GBP:'£', JPY:'¥', KRW:'₩',
+            TWD:'NT$', HKD:'HK$', CNY:'¥', CAD:'C$', AUD:'A$'
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+
+            // ── 站点Logo ──────────────────────────────────────
+            if (siteInfo.gameLogo) {
+                document.querySelectorAll('.game-icon').forEach(el => { el.src = siteInfo.gameLogo; });
+            }
+
+            // ── Banner（多语种：优先匹配当前语言，其次Others） ─
+            const bannerEl = document.querySelector('.banner');
+            if (bannerEl && banners.length > 0) {
+                const now = Date.now();
+                function getBannerForLang(lang) {
+                    const active = banners.filter(b => {
+                        if (!b.effectiveTime) return true;
+                        const [s, e] = b.effectiveTime.split('~').map(t => new Date(t.trim()).getTime());
+                        return now >= s && now <= e;
+                    });
+                    return active.find(b => b.language === lang)
+                        || active.find(b => b.language === 'Others')
+                        || active[0];
+                }
+                window.__applyBanner = function(lang) {
+                    const b = getBannerForLang(lang);
+                    if (!b) return;
+                    const imgSrc = b.bannerImage || 'banner.jpg';
+                    const inner = b.jumpUrl
+                        ? `<a href="${b.jumpUrl}" target="_blank"><img src="${imgSrc}" class="banner-image" style="width:100%;height:100%;object-fit:cover;"></a>`
+                        : `<img src="${imgSrc}" class="banner-image" style="width:100%;height:100%;object-fit:cover;">`;
+                    bannerEl.innerHTML = inner;
+                };
+                window.__applyBanner(currentLang || 'zh-CN');
+            }
+
+            // ── 通知栏（多语种） ──────────────────────────────
+            const noticeTextEl = document.getElementById('noticeText');
+            if (noticeTextEl && notices.length > 0) {
+                const now = Date.now();
+                window.__applyNotice = function(lang) {
+                    const active = notices.filter(n => {
+                        if (!n.effectiveTime) return true;
+                        const [s, e] = n.effectiveTime.split('~').map(t => new Date(t.trim()).getTime());
+                        return now >= s && now <= e;
+                    });
+                    const n = active.find(x => x.language === lang)
+                           || active.find(x => x.language === 'Others')
+                           || active[0];
+                    if (n) {
+                        const linkHtml = (n.linkText && n.linkUrl)
+                            ? ` <a href="${n.linkUrl}" target="_blank" style="color:#d48806;text-decoration:underline;">${n.linkText}</a>`
+                            : '';
+                        noticeTextEl.innerHTML = (n.content || '') + linkHtml;
+                        noticeTextEl.closest('.notice-bar').style.display = 'flex';
+                    } else {
+                        noticeTextEl.closest('.notice-bar').style.display = 'none';
+                    }
+                };
+                window.__applyNotice(currentLang || 'zh-CN');
+            } else if (noticeTextEl) {
+                noticeTextEl.closest('.notice-bar').style.display = 'none';
+            }
+
+            // ── 代币档位（按当前地区过滤，Others兜底） ────────
+            window.__dynamicCoins = allCoins;
+            window.__renderTiersDynamic = function(region, lang) {
+                const tierGrid = document.getElementById('tierGrid');
+                if (!tierGrid) return;
+                const regionCoins = allCoins.filter(c => c.region === region);
+                const tiersToShow = regionCoins.length > 0 ? regionCoins
+                    : allCoins.filter(c => c.region === 'Others' || !c.region);
+
+                if (tiersToShow.length === 0) return;
+
+                const sym = currencySymbols[tiersToShow[0].localCurrency] || tiersToShow[0].localCurrency || '$';
+                tierGrid.innerHTML = tiersToShow.map((c, idx) => {
+                    const price = c.localPrice ? (c.localPrice / 100).toFixed(2) : (c.amount / 100).toFixed(2);
+                    const bonusHtml = c.bonusAmount > 0 ? `
+                        <div class="tier-bonus-section">
+                            <div class="tier-bonus-badge">+${c.bonusAmount}</div>
+                        </div>` : '';
+                    const hotBadge = c.isHighlight ? `<div class="tier-hot-badge">HOT</div>` : '';
+                    return `
+                    <div class="tier-card${c.isHighlight ? ' highlight' : ''}" onclick="selectTierOverseasDynamic(${idx}, '${region}')">
+                        ${hotBadge}
+                        <div class="tier-content">
+                            <div class="tier-left">
+                                <div class="tier-tokens-section">
+                                    <img src="daibi.png" alt="代币" style="width:24px;height:24px;">
+                                    <span style="font-size:18px;font-weight:700;">${c.coinAmount}</span>
+                                </div>
+                                ${bonusHtml}
+                            </div>
+                            <div class="tier-price-section">
+                                <div class="tier-currency">${sym}</div>
+                                <div class="tier-price">${price}</div>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                // 注入选档处理
+                window.__tiersForRegion = tiersToShow;
+                window.selectTierOverseasDynamic = function(idx, region) {
+                    const c = window.__tiersForRegion[idx];
+                    if (!c) return;
+                    if (!isLoggedIn) { document.getElementById('loginCard').scrollIntoView({behavior:'smooth'}); return; }
+                    document.querySelectorAll('.tier-card').forEach(el => el.classList.remove('selected'));
+                    event.currentTarget.classList.add('selected');
+                    selectedTierId = idx;
+                    const sym2 = currencySymbols[c.localCurrency] || '$';
+                    const price = c.localPrice ? c.localPrice / 100 : c.amount / 100;
+                    currentPrice = price;
+                    currentTokens = c.coinAmount;
+                    currentBonus = c.bonusAmount || 0;
+                    currentPoints = c.pointsAmount || 0;
+                    selectedPaymentMethod = c.paymentChannel || null;
+                    updateSummary();
+                    document.getElementById('paymentDrawer').classList.add('show');
+                };
+            };
+
+            // ── 礼包列表（按当前地区过滤，Others兜底） ────────
+            window.__renderGiftsDynamic = function(region, lang) {
+                const giftList = document.getElementById('giftPackageList');
+                if (!giftList) return;
+                const regionGifts = allGifts.filter(g => g.region === region);
+                const giftsToShow = regionGifts.length > 0 ? regionGifts
+                    : allGifts.filter(g => g.region === 'Others' || !g.region);
+
+                if (giftsToShow.length === 0) { giftList.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">暂无礼包</div>'; return; }
+
+                const sym = currencySymbols[giftsToShow[0].localCurrency] || '$';
+                giftList.innerHTML = giftsToShow.map((g, idx) => {
+                    const price = g.localPrice ? (g.localPrice / 100).toFixed(2) : g.amount;
+                    const origPrice = g.discountLocalPrice ? (g.discountLocalPrice / 100).toFixed(2) : null;
+                    const origHtml = origPrice ? `<div class="gift-package-original-price">${sym}${origPrice}</div>` : '';
+                    return `
+                    <div class="gift-package-card" onclick="selectGiftOverseasDynamic(${idx}, '${region}')">
+                        <div class="gift-package-image">
+                            <img src="${g.giftImage || 'libao.png'}" alt="${g.giftName}" style="width:100%;height:100%;object-fit:cover;">
+                        </div>
+                        <div class="gift-package-content">
+                            <div class="gift-package-name">${g.giftName}</div>
+                            <div class="gift-package-items">${g.content || ''}</div>
+                            <div class="gift-package-limit">限购${g.limitCount}次（${g.limitType === 'total' ? '总计' : g.limitType === 'daily' ? '每天' : '每周'}）</div>
+                            <div class="gift-package-price-section">
+                                ${origHtml}
+                                <div class="gift-package-price">${price}</div>
+                                <div class="gift-package-currency">${sym}</div>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                window.__giftsForRegion = giftsToShow;
+                window.selectGiftOverseasDynamic = function(idx) {
+                    const g = window.__giftsForRegion[idx];
+                    if (!g) return;
+                    if (!isLoggedIn) { document.getElementById('loginCard').scrollIntoView({behavior:'smooth'}); return; }
+                    document.querySelectorAll('.gift-package-card').forEach(el => el.classList.remove('selected'));
+                    event.currentTarget.classList.add('selected');
+                    selectedGiftPackageId = idx;
+                    const sym2 = currencySymbols[g.localCurrency] || '$';
+                    currentPrice = g.localPrice ? g.localPrice / 100 : g.amount;
+                    currentTokens = 0;
+                    currentBonus = 0;
+                    currentPoints = g.pointsAmount || 0;
+                    updateSummary();
+                    document.getElementById('paymentDrawer').classList.add('show');
+                };
+            };
+
+            // ── 挂钩原有 selectRegion，切换地区时重新渲染 ─────
+            const _origSelectRegion = window.selectRegion;
+            window.selectRegion = function(region, regionName, lang) {
+                if (_origSelectRegion) _origSelectRegion(region, regionName, lang);
+                // 延迟等原函数更新 currentRegion/currentLang
+                setTimeout(() => {
+                    window.__renderTiersDynamic(region, lang);
+                    window.__renderGiftsDynamic(region, lang);
+                    if (window.__applyBanner) window.__applyBanner(lang);
+                    if (window.__applyNotice) window.__applyNotice(lang);
+                }, 0);
+            };
+
+            // ── 首次渲染（默认地区）────────────────────────────
+            const defaultRegion = currentRegion || 'cn';
+            const defaultLang   = currentLang || 'zh-CN';
+            window.__renderTiersDynamic(defaultRegion, defaultLang);
+            window.__renderGiftsDynamic(defaultRegion, defaultLang);
+
+        }); // end DOMContentLoaded
+    })();
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            padding-top: 60px;
+            padding-bottom: 200px;
+            max-width: 480px;
+            margin: 0 auto;
+        }
+
+        .header {
+            position: fixed;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 480px;
+            width: 100%;
+            background: white;
+            padding: 12px 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .game-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            object-fit: cover;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .add-to-home-btn {
+            padding: 6px 10px;
+            background: #52c41a;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            transition: all 0.3s;
+        }
+
+        .region-selector {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .region-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 5px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            min-width: 200px;
+            z-index: 100;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .region-dropdown.show {
+            display: block;
+        }
+
+        .continent-header {
+            padding: 10px 16px;
+            background: #f5f5f5;
+            font-size: 13px;
+            font-weight: 600;
+            color: #666;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .region-item {
+            padding: 12px 16px 12px 28px;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            border-bottom: 1px solid #f5f5f5;
+        }
+
+        .region-item:hover {
+            background: #f5f5f5;
+        }
+
+        .region-item.active {
+            background: #e6f7ff;
+            color: #1890ff;
+        }
+
+        .banner {
+            background: white;
+            border-radius: 8px;
+            margin: 0 15px 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            overflow: hidden;
+            height: 160px;
+            position: relative;
+        }
+
+        .banner-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .points-mall-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            z-index: 10;
+        }
+
+        .points-mall-btn:active {
+            transform: scale(0.95);
+        }
+
+        .notice-bar {
+            background: linear-gradient(90deg, #fff7e6 0%, #fffbe6 100%);
+            border-radius: 8px;
+            margin: 0 15px 15px;
+            padding: 12px 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            overflow: hidden;
+        }
+
+        .notice-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+            animation: shake 2s infinite;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: rotate(0deg); }
+            10%, 30% { transform: rotate(-10deg); }
+            20%, 40% { transform: rotate(10deg); }
+            50% { transform: rotate(0deg); }
+        }
+
+        .notice-content {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .notice-text {
+            font-size: 13px;
+            color: #d48806;
+            line-height: 1.6;
+            white-space: nowrap;
+            animation: scroll-left 20s linear infinite;
+        }
+
+        @keyframes scroll-left {
+            0% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+        }
+
+        .notice-text:hover {
+            animation-play-state: paused;
+        }
+
+        .role-info-card {
+            background: white;
+            border-radius: 8px;
+            margin: 0 15px 0;
+            padding: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .tab-container {
+            background: white;
+            margin: 15px 15px 0;
+            border-radius: 8px 8px 0 0;
+            padding: 8px 8px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: flex;
+            gap: 8px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid transparent;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            background: transparent;
+            color: #1890ff;
+            border-bottom-color: #1890ff;
+            font-weight: 600;
+        }
+
+        .tab-btn:active {
+            transform: scale(0.98);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .activity-section {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .activity-card {
+            margin-bottom: 15px;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .activity-card:last-child {
+            margin-bottom: 0;
+        }
+
+        .activity-card:active {
+            transform: scale(0.98);
+        }
+
+        .activity-card img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .role-info-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .role-input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .role-id-input {
+            flex: 1;
+            padding: 10px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .role-id-input:focus {
+            outline: none;
+            border-color: #1890ff;
+        }
+
+        .verify-role-btn {
+            padding: 10px 20px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.3s;
+        }
+
+        .verify-role-btn:active {
+            transform: scale(0.95);
+        }
+
+        .role-input-group.hide {
+            display: none;
+        }
+
+        .role-info-display {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .role-info-display.show {
+            display: flex;
+        }
+
+        .role-info-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+        }
+
+        .role-info-label {
+            color: #999;
+            min-width: 70px;
+        }
+
+        .role-info-value {
+            color: #333;
+            font-weight: 500;
+        }
+
+        .reenter-btn {
+            padding: 8px 16px;
+            background: #f5f5f5;
+            color: #666;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 8px;
+            width: 100%;
+        }
+
+        .reenter-btn:active {
+            transform: scale(0.98);
+        }
+
+        .content {
+            margin: 0 15px 15px;
+        }
+
+        .package-section {
+            background: white;
+            border-radius: 0 0 8px 8px;
+            padding: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .help-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #1890ff;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .help-icon:active {
+            transform: scale(0.9);
+        }
+
+        .help-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1001;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .help-modal.show {
+            display: flex;
+        }
+
+        .help-content {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            width: 100%;
+            max-width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .help-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 24px;
+            color: #999;
+            cursor: pointer;
+            background: none;
+            border: none;
+            z-index: 1;
+        }
+
+        .help-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+            padding-right: 30px;
+        }
+
+        .help-section {
+            margin-bottom: 20px;
+        }
+
+        .help-section-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .help-section-icon {
+            font-size: 20px;
+        }
+
+        .help-section-content {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.8;
+            padding-left: 28px;
+        }
+
+        .help-section-content ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .help-section-content li {
+            margin-bottom: 8px;
+        }
+
+        .help-highlight {
+            color: #1890ff;
+            font-weight: 600;
+        }
+
+        .help-warning {
+            background: #fff7e6;
+            border-left: 3px solid #faad14;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .tier-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .tier-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: white;
+            position: relative;
+        }
+
+        .tier-card:active {
+            transform: scale(0.98);
+        }
+
+        .tier-card.selected {
+            border-color: #1890ff;
+            background: #f0f7ff;
+        }
+
+        .tier-card.highlight {
+            border-color: #faad14;
+            background: linear-gradient(135deg, #fff7e6 0%, #fffbe6 100%);
+            box-shadow: 0 4px 12px rgba(250, 173, 20, 0.3);
+        }
+
+        .tier-card.highlight.selected {
+            border-color: #1890ff;
+            background: linear-gradient(135deg, #e6f7ff 0%, #f0f7ff 100%);
+            box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+        }
+
+        .tier-bonus-badge {
+            position: absolute;
+            top: -6px;
+            left: 8px;
+            background: #ff4d4f;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: bold;
+            z-index: 1;
+        }
+
+        .tier-hot-badge {
+            position: absolute;
+            top: -6px;
+            right: 8px;
+            background: linear-gradient(135deg, #ff4d4f 0%, #ff7875 100%);
+            color: white;
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: bold;
+            z-index: 1;
+            box-shadow: 0 2px 8px rgba(255, 77, 79, 0.4);
+            animation: hotPulse 1.5s infinite;
+        }
+
+        @keyframes hotPulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+        }
+
+        .tier-points {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 8px;
+            display: inline-block;
+        }
+
+        .tier-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .tier-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .tier-tokens-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .token-icon {
+            width: 32px;
+            height: 32px;
+            flex-shrink: 0;
+        }
+
+        .token-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .token-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .token-amount {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            line-height: 1;
+        }
+
+        .tier-bonus-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .bonus-icon {
+            width: 32px;
+            height: 32px;
+            flex-shrink: 0;
+        }
+
+        .bonus-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .bonus-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .bonus-amount {
+            font-size: 12px;
+            font-weight: bold;
+            color: #fa8c16;
+            line-height: 1;
+        }
+
+        .tier-price-section {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .tier-price {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            line-height: 1;
+        }
+
+        .tier-currency {
+            font-size: 11px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        .payment-drawer {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(100%);
+            max-width: 480px;
+            width: 100%;
+            background: white;
+            border-radius: 16px 16px 0 0;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+            z-index: 999;
+            transition: transform 0.3s ease;
+        }
+
+        .payment-drawer.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .drawer-handle {
+            width: 40px;
+            height: 4px;
+            background: #d9d9d9;
+            border-radius: 2px;
+            margin: 12px auto;
+        }
+
+        .drawer-content {
+            padding: 0 20px 20px;
+        }
+
+        .drawer-close {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 24px;
+            color: #999;
+            cursor: pointer;
+            background: none;
+            border: none;
+        }
+
+        .drawer-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .summary-label {
+            color: #666;
+        }
+
+        .summary-value {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .payment-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .payment-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .payment-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .payment-option {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .payment-option:active {
+            transform: scale(0.95);
+        }
+
+        .payment-option.selected {
+            border-color: #1890ff;
+            background: #f0f7ff;
+        }
+
+        .payment-icon {
+            font-size: 32px;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 40px;
+        }
+
+        .payment-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .summary-divider {
+            height: 1px;
+            background: #e0e0e0;
+            margin: 20px 0;
+        }
+
+        .summary-total {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+
+        .total-label {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .total-value {
+            color: #ff4d4f;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .pay-btn {
+            width: 100%;
+            padding: 14px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .pay-btn:active {
+            transform: scale(0.98);
+        }
+
+        .pay-btn:disabled {
+            background: #d9d9d9;
+            cursor: not-allowed;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 480px;
+            width: 100%;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            padding: 15px;
+            z-index: 50;
+        }
+
+        .footer-content {
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+        }
+
+        .footer-left {
+            display: flex;
+            gap: 12px;
+        }
+
+        .social-links {
+            display: flex;
+            gap: 12px;
+        }
+
+        .social-link {
+            cursor: pointer;
+            transition: transform 0.3s;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .social-link img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .social-link:active {
+            transform: scale(0.9);
+        }
+
+        .footer-right {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 11px;
+            color: #666;
+            text-align: left;
+        }
+
+        .policy-links {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .policy-link {
+            color: #1890ff;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .contact-email {
+            line-height: 1.6;
+        }
+
+        .login-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-modal.show {
+            display: flex;
+        }
+
+        .login-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px 25px;
+            width: 90%;
+            max-width: 350px;
+            position: relative;
+        }
+
+        .login-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 24px;
+            color: #999;
+            cursor: pointer;
+            background: none;
+            border: none;
+        }
+
+        .login-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .form-group-login {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-label-login {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .form-input-login {
+            padding: 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-input-login:focus {
+            outline: none;
+            border-color: #1890ff;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .login-btn:active {
+            transform: scale(0.98);
+        }
+
+        .login-btn:disabled {
+            background: #d9d9d9;
+            cursor: not-allowed;
+        }
+
+        .user-info {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: #f0f7ff;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #1890ff;
+        }
+
+        .user-info.show {
+            display: flex;
+        }
+
+        .logout-btn {
+            background: none;
+            border: none;
+            color: #ff4d4f;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 0;
+            margin-left: 5px;
+        }
+
+        .customer-service-float {
+            position: fixed;
+            right: 15px;
+            bottom: 220px;
+            width: 56px;
+            height: 56px;
+            background: white;
+            border-radius: 50%;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 999;
+            transition: all 0.3s;
+            animation: pulse 2s infinite;
+            left: auto;
+            transform: none;
+        }
+
+        @media (min-width: 481px) {
+            .customer-service-float {
+                right: calc(50% - 240px + 15px);
+            }
+        }
+
+        .customer-service-float:active {
+            transform: scale(0.9);
+        }
+
+        .customer-service-float:hover {
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+        }
+
+        .customer-service-icon {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            }
+            50% {
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            }
+        }
+
+        .guide-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 9999;
+        }
+
+        .guide-overlay.show {
+            display: block;
+        }
+
+        .guide-highlight {
+            position: relative;
+            z-index: 10000;
+            box-shadow: 0 0 0 4px #1890ff, 0 0 20px rgba(24, 144, 255, 0.8);
+            animation: guideGlow 2s infinite;
+        }
+
+        @keyframes guideGlow {
+            0%, 100% {
+                box-shadow: 0 0 0 4px #1890ff, 0 0 20px rgba(24, 144, 255, 0.8);
+            }
+            50% {
+                box-shadow: 0 0 0 6px #40a9ff, 0 0 30px rgba(64, 169, 255, 1);
+            }
+        }
+
+        .guide-tooltip {
+            position: fixed;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            z-index: 10001;
+            max-width: 320px;
+            animation: guideSlideIn 0.3s ease;
+        }
+
+        @keyframes guideSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .guide-tooltip-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .guide-tooltip-step {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            background: #1890ff;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 24px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .guide-tooltip-content {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
+
+        .guide-tooltip-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .guide-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .guide-btn-skip {
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        .guide-btn-next {
+            background: #1890ff;
+            color: white;
+        }
+
+        .guide-btn:active {
+            transform: scale(0.95);
+        }
+
+        .recharge-tab-container {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 15px;
+        }
+
+        .recharge-tab-btn {
+            flex: 1;
+            padding: 8px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            font-size: 13px;
+            font-weight: 500;
+            color: #666;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .recharge-tab-btn.active {
+            background: transparent;
+            color: #1890ff;
+            border-bottom-color: #1890ff;
+            font-weight: 600;
+        }
+
+        .recharge-tab-btn:active {
+            transform: scale(0.98);
+        }
+
+        .help-icon-inline {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #e6f7ff;
+            color: #1890ff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            border: 1px solid #91d5ff;
+        }
+
+        .recharge-tab-btn.active .help-icon-inline {
+            background: #1890ff;
+            color: white;
+            border-color: #1890ff;
+        }
+
+        .recharge-tab-content {
+            display: none;
+        }
+
+        .recharge-tab-content.active {
+            display: block;
+        }
+
+        .gift-package-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .gift-package-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            padding: 12px;
+            gap: 12px;
+        }
+
+        .gift-package-card:active {
+            transform: scale(0.98);
+        }
+
+        .gift-package-card.selected {
+            border-color: #1890ff;
+            box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+        }
+
+        .gift-package-image {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+
+        .gift-package-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .gift-package-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .gift-package-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .gift-item {
+            background: #f5f5f5;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .gift-item-icon {
+            font-size: 12px;
+        }
+
+        .gift-package-limit {
+            font-size: 11px;
+            color: #ff4d4f;
+        }
+
+        .gift-package-price-section {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .gift-package-original-price {
+            font-size: 11px;
+            color: #999;
+            text-decoration: line-through;
+        }
+
+        .gift-package-price {
+            font-size: 18px;
+            font-weight: bold;
+            color: #ff4d4f;
+        }
+
+        .gift-package-currency {
+            font-size: 10px;
+            color: #999;
+        }
+    </style>
+
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            <img src="gameicon.png" alt="游戏图标" class="game-icon">
+            <span id="headerTitle">官方充值中心</span>
+        </div>
+        <div class="header-right">
+            <div class="user-info" id="userInfo">
+                <span>👤</span>
+                <span id="userRoleId"></span>
+                <button class="logout-btn" onclick="logout()">退出</button>
+            </div>
+            <button class="add-to-home-btn" onclick="addToBookmark()" title="收藏网页">⭐</button>
+            <button class="add-to-home-btn" onclick="addToHomeScreen()" title="添加到桌面">📱</button>
+
+            <div class="region-selector" onclick="toggleRegionDropdown()">
+                <span>🌐</span>
+                <span id="currentRegion">中国</span>
+                <div class="region-dropdown" id="regionDropdown">
+                    <div class="continent-header">🌏 亚洲 (Asia)</div>
+                    <div class="region-item active" onclick="selectRegion('cn', '中国', 'zh-CN')">
+                        <span>🇨🇳</span>
+                        <span>中国</span>
+                    </div>
+                    <div class="region-item" onclick="selectRegion('tw', '台湾', 'zh-TW')">
+                        <span>🇹🇼</span>
+                        <span>台湾</span>
+                    </div>
+                    <div class="region-item" onclick="selectRegion('jp', '日本', 'ja')">
+                        <span>🇯🇵</span>
+                        <span>日本</span>
+                    </div>
+                    <div class="region-item" onclick="selectRegion('kr', '韩国', 'ko')">
+                        <span>🇰🇷</span>
+                        <span>韩国</span>
+                    </div>
+                    
+                    <div class="continent-header">🌎 北美洲 (North America)</div>
+                    <div class="region-item" onclick="selectRegion('us', 'United States', 'en')">
+                        <span>🇺🇸</span>
+                        <span>United States</span>
+                    </div>
+                    <div class="region-item" onclick="selectRegion('ca', 'Canada', 'en')">
+                        <span>🇨🇦</span>
+                        <span>Canada</span>
+                    </div>
+                    
+                    <div class="continent-header">🌍 欧洲 (Europe)</div>
+                    <div class="region-item" onclick="selectRegion('uk', 'United Kingdom', 'en')">
+                        <span>🇬🇧</span>
+                        <span>United Kingdom</span>
+                    </div>
+                    <div class="region-item" onclick="selectRegion('de', 'Germany', 'en')">
+                        <span>🇩🇪</span>
+                        <span>Germany</span>
+                    </div>
+                    
+                    <div class="continent-header">🌍 其他 (Others)</div>
+                    <div class="region-item" onclick="selectRegion('others', 'Others', 'en')">
+                        <span>🌍</span>
+                        <span>Others</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="login-modal" id="loginModal">
+        <div class="login-content">
+            <button class="login-close" onclick="closeLogin()">✕</button>
+            <h2 class="login-title" id="loginTitle">角色ID验证</h2>
+            <form class="login-form" onsubmit="handleLogin(event)">
+                <div class="form-group-login">
+                    <label class="form-label-login" id="labelRoleId">角色ID</label>
+                    <input type="text" class="form-input-login" id="roleIdInput" placeholder="请输入角色ID" required>
+                </div>
+                <button type="submit" class="login-btn" id="loginBtn">验证并登录</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="banner">
+        <img src="banner.jpg" alt="充值活动" class="banner-image">
+    </div>
+
+    <div class="notice-bar">
+        <div class="notice-icon">📢</div>
+        <div class="notice-content">
+            <div class="notice-text" id="noticeText">欢迎来到官方充值中心！充值即送额外代币，最高可获得100%赠送！活动时间有限，快来参与吧！</div>
+        </div>
+    </div>
+
+    <div class="role-info-card" id="roleInfoCard">
+        <div class="role-info-title">
+            <span id="roleInfoTitle">角色验证</span>
+            <div class="help-icon" onclick="showRoleIdHelpModal()">?</div>
+        </div>
+        <div class="role-input-group">
+            <input type="text" class="role-id-input" id="roleIdInputCard" placeholder="请输入角色ID">
+            <button class="verify-role-btn" onclick="verifyRole()" id="verifyBtn">验证</button>
+        </div>
+        <div class="role-info-display" id="roleInfoDisplay">
+            <div class="role-info-item">
+                <span class="role-info-label" id="labelServer">服务器:</span>
+                <span class="role-info-value" id="serverName">-</span>
+            </div>
+            <div class="role-info-item">
+                <span class="role-info-label" id="labelRoleName">角色名称:</span>
+                <span class="role-info-value" id="roleName">-</span>
+            </div>
+            <button class="reenter-btn" onclick="reenterRoleId()" id="reenterBtn">重新输入</button>
+        </div>
+    </div>
+
+    <div class="content">
+        <div class="package-section">
+            <div class="recharge-tab-container">
+                <button class="recharge-tab-btn active" onclick="switchRechargeTab('token')">
+                    <span>代币</span>
+                    <div class="help-icon-inline" onclick="event.stopPropagation(); showHelpModal()">?</div>
+                </button>
+                <button class="recharge-tab-btn" onclick="switchRechargeTab('gift')">道具礼包</button>
+            </div>
+                
+            <div class="recharge-tab-content active" id="tokenTab">
+                <div class="tier-grid" id="tierGrid">
+                    <!-- Tier cards will be dynamically generated -->
+                </div>
+            </div>
+            
+            <div class="recharge-tab-content" id="giftTab">
+                <div class="gift-package-list" id="giftPackageList">
+                    <!-- Gift packages will be dynamically generated -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="help-modal" id="helpModal">
+        <div class="help-content">
+            <button class="help-close" onclick="closeHelpModal()">✕</button>
+            <h3 class="help-title" id="helpTitle">储值说明</h3>
+            <div id="helpSections"></div>
+        </div>
+    </div>
+
+    <div class="payment-drawer" id="paymentDrawer">
+        <div class="drawer-handle"></div>
+        <button class="drawer-close" onclick="closeDrawer()">✕</button>
+        <div class="drawer-content">
+            <h3 class="drawer-title" id="drawerTitle">订单确认</h3>
+            <div class="summary-item">
+                <span class="summary-label" id="labelRoleInfo">角色信息</span>
+                <span class="summary-value" id="roleInfoSummary">-</span>
+            </div>
+            <div class="summary-item" id="giftNameItem" style="display: none;">
+                <span class="summary-label" id="labelGiftName">礼包名称</span>
+                <span class="summary-value" id="giftNameValue">-</span>
+            </div>
+            <div class="summary-item" id="giftContentItem" style="display: none;">
+                <span class="summary-label" id="labelGiftContent">礼包内容</span>
+                <div class="summary-value" id="giftContentValue" style="display: flex; flex-wrap: wrap; gap: 6px;">-</div>
+            </div>
+            <div class="summary-item" id="tokenAmountItem">
+                <span class="summary-label" id="labelTokens">代币数量</span>
+                <span class="summary-value" id="tokenAmount">0</span>
+            </div>
+            <div class="summary-item" id="bonusAmountItem">
+                <span class="summary-label" id="labelBonus">赠送代币</span>
+                <span class="summary-value" id="bonusAmount" style="color: #52c41a;">0</span>
+            </div>
+            <div class="summary-item" id="pointsAmountItem">
+                <span class="summary-label" id="labelPoints">赠送积分</span>
+                <span class="summary-value" id="pointsAmount" style="color: #fa8c16;">0</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label" id="labelQuantity">购买数量</span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="btn btn-small" onclick="decreaseQuantity()" style="width: 32px; height: 32px; padding: 0; font-size: 18px; background: #f5f5f5; color: #666; border: 1px solid #d9d9d9;">-</button>
+                    <span class="summary-value" id="quantityAmount" style="min-width: 30px; text-align: center;">1</span>
+                    <button class="btn btn-small" onclick="increaseQuantity()" style="width: 32px; height: 32px; padding: 0; font-size: 18px; background: #f5f5f5; color: #666; border: 1px solid #d9d9d9;">+</button>
+                </div>
+            </div>
+
+            <div class="payment-section">
+                <div class="payment-title" id="paymentTitle">支付方式</div>
+                <div class="payment-grid" id="paymentGrid">
+                    <div class="payment-option" onclick="selectPayment('visa')">
+                        <div class="payment-icon"><img src="pm_gateway_amex_rupay_discover_diner.png" alt="Visa/Master" style="width: 60px; height: auto;"></div>
+                        <div class="payment-name">Visa/Master</div>
+                    </div>
+                    <div class="payment-option" onclick="selectPayment('paypal')">
+                        <div class="payment-icon"><img src="pm_paypal.png" alt="PayPal" style="width: 60px; height: auto;"></div>
+                        <div class="payment-name">PayPal</div>
+                    </div>
+                    <div class="payment-option" onclick="selectPayment('applepay')">
+                        <div class="payment-icon"><img src="pm_applepay.png" alt="Apple Pay" style="width: 60px; height: auto;"></div>
+                        <div class="payment-name">Apple Pay</div>
+                    </div>
+                    <div class="payment-option" onclick="selectPayment('googlepay')">
+                        <div class="payment-icon"><img src="GooglePay.png" alt="Google Pay" style="width: 60px; height: auto;"></div>
+                        <div class="payment-name">Google Pay</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="summary-divider"></div>
+            <div class="summary-total">
+                <span class="total-label" id="labelTotal">总计</span>
+                <span class="total-value" id="totalPrice">$0.00</span>
+            </div>
+            <button class="pay-btn" id="payBtn" disabled onclick="handlePay()">立即支付</button>
+        </div>
+    </div>
+
+    <script>
+        let selectedTierId = null;
+        let selectedPaymentMethod = null;
+        let currentPrice = 0;
+        let currentTokens = 0;
+        let currentBonus = 0;
+        let currentPoints = 0;
+        let currentRegion = 'cn';
+        let currentLang = 'zh-CN';
+        let currentCurrency = 'CNY';
+        let currentCurrencySymbol = '¥';
+        let currentQuantity = 1;
+        let isLoggedIn = false;
+        let userRoleId = '';
+        let serverName = '';
+        let roleName = '';
+
+        const regionCurrencyMap = {
+            'cn': { currency: 'CNY', symbol: '¥', rate: 7.2 },
+            'tw': { currency: 'TWD', symbol: 'NT$', rate: 31.5 },
+            'jp': { currency: 'JPY', symbol: '¥', rate: 150 },
+            'kr': { currency: 'KRW', symbol: '₩', rate: 1350 },
+            'us': { currency: 'USD', symbol: '$', rate: 1 },
+            'ca': { currency: 'CAD', symbol: 'C$', rate: 1.35 },
+            'uk': { currency: 'GBP', symbol: '£', rate: 0.79 },
+            'de': { currency: 'EUR', symbol: '€', rate: 0.92 },
+            'others': { currency: 'USD', symbol: '$', rate: 1 }
+        };
+
+        const translations = {
+            'zh-CN': {
+                headerTitle: '官方充值中心',
+                tierTitle: '选择礼包',
+                drawerTitle: '订单摘要',
+                labelPackage: '选择套餐',
+                labelTokens: '代币数量',
+                labelBonus: '赠送代币',
+                paymentTitle: '支付方式',
+                labelTotal: '总计',
+                payBtn: '立即支付',
+                notSelected: '未选择',
+                loginTitle: '角色ID验证',
+                labelRoleId: '角色ID',
+                loginBtn: '验证并登录',
+                roleIdPlaceholder: '请输入角色ID',
+                roleInfoTitle: '角色验证',
+                verifyBtn: '验证',
+                labelServer: '服务器:',
+                labelRoleName: '角色名称:',
+                reenterBtn: '重新输入',
+                labelRoleInfo: '角色信息',
+                labelQuantity: '购买数量',
+                privacyPolicy: '隐私协议',
+                termsOfService: '用户协议',
+                contactEmail: '如有任何问题，请联系 support@game.mail',
+                pointsMall: '积分商城',
+                helpTitle: '储值说明',
+                helpSection1Title: '什么是代币？',
+                helpSection1Content: '代币是游戏内的虚拟货币，可用于购买游戏道具、装备和其他增值服务。',
+                helpSection2Title: '如何充值？',
+                helpSection2Content: '<ul><li>选择您需要的代币礼包</li><li>验证您的角色ID</li><li>选择支付方式</li><li>完成支付即可到账</li></ul>',
+                helpSection3Title: '充值优惠',
+                helpSection3Content: '购买更大额度的礼包可获得额外赠送代币！赠送比例最高可达<span class="help-highlight">100%</span>',
+                helpSection4Title: '注意事项',
+                helpSection4Content: '<div class="help-warning">⚠️ 请确保角色ID正确，充值后无法退款或转移</div><div class="help-warning">⚠️ 代币到账时间通常为1-5分钟，如遇延迟请联系客服</div>',
+                roleIdHelpTitle: '如何获取角色ID？',
+                roleIdHelpSection1Title: '游戏内查看',
+                roleIdHelpSection1Content: '在游戏中打开<span class="help-highlight">【设置】</span>菜单，点击<span class="help-highlight">【账号信息】</span>选项卡，即可查看您的角色ID。',
+                roleIdHelpSection2Title: '角色ID位置',
+                roleIdHelpSection2Content: '<ul><li>📱 主界面 → 设置按钮（齿轮图标）</li><li>👤 账号信息 → 角色ID（通常为5-6位数字）</li><li>📋 长按角色ID可复制</li></ul>',
+                roleIdHelpSection3Title: '注意事项',
+                roleIdHelpSection3Content: '<div class="help-warning">⚠️ 请确保输入正确的角色ID，错误的ID将导致充值失败</div><div class="help-warning">⚠️ 每个账号可能有多个角色，请选择需要充值的角色ID</div>'
+            },
+            'zh-TW': {
+                headerTitle: '官方儲值中心',
+                tierTitle: '選擇禮包',
+                drawerTitle: '訂單摘要',
+                labelPackage: '選擇套餐',
+                labelTokens: '代幣數量',
+                labelBonus: '贈送代幣',
+                paymentTitle: '支付方式',
+                labelTotal: '總計',
+                payBtn: '立即支付',
+                notSelected: '未選擇',
+                loginTitle: '角色ID驗證',
+                labelRoleId: '角色ID',
+                loginBtn: '驗證並登錄',
+                roleIdPlaceholder: '請輸入角色ID',
+                roleInfoTitle: '角色驗證',
+                verifyBtn: '驗證',
+                labelServer: '服務器:',
+                labelRoleName: '角色名稱:',
+                reenterBtn: '重新輸入',
+                labelRoleInfo: '角色信息',
+                labelQuantity: '購買數量',
+                privacyPolicy: '隱私協議',
+                termsOfService: '用戶協議',
+                contactEmail: '如有任何問題，請聯繫<br>support@game.mail',
+                pointsMall: '積分商城'
+            },
+            'ja': {
+                headerTitle: '公式チャージ',
+                tierTitle: 'ギフトパック選択',
+                drawerTitle: '注文概要',
+                labelPackage: 'パッケージ',
+                labelTokens: 'トークン数',
+                labelBonus: 'ボーナス',
+                paymentTitle: '支払い方法',
+                labelTotal: '合計',
+                payBtn: '今すぐ支払う',
+                notSelected: '未選択',
+                loginTitle: 'ロールID認証',
+                labelRoleId: 'ロールID',
+                loginBtn: '認証してログイン',
+                roleIdPlaceholder: 'ロールIDを入力',
+                roleInfoTitle: 'ロール認証',
+                verifyBtn: '認証',
+                labelServer: 'サーバー:',
+                labelRoleName: 'ロール名:',
+                reenterBtn: '再入力',
+                labelRoleInfo: 'ロール情報',
+                labelQuantity: '購入数量',
+                privacyPolicy: 'プライバシーポリシー',
+                termsOfService: '利用規約',
+                contactEmail: 'ご質問がある場合は、お問い合わせください<br>support@game.mail',
+                pointsMall: 'ポイントモール'
+            },
+            'ko': {
+                headerTitle: '공식 충전',
+                tierTitle: '선물 패키지 선택',
+                drawerTitle: '주문 요약',
+                labelPackage: '패키지',
+                labelTokens: '토큰 수량',
+                labelBonus: '보너스',
+                paymentTitle: '결제 방법',
+                labelTotal: '합계',
+                payBtn: '지금 결제',
+                notSelected: '선택 안 함',
+                loginTitle: '역할 ID 인증',
+                labelRoleId: '역할 ID',
+                loginBtn: '인증 및 로그인',
+                roleIdPlaceholder: '역할 ID 입력',
+                roleInfoTitle: '역할 인증',
+                verifyBtn: '인증',
+                labelServer: '서버:',
+                labelRoleName: '역할 이름:',
+                reenterBtn: '다시 입력',
+                labelRoleInfo: '역할 정보',
+                labelQuantity: '구매 수량',
+                privacyPolicy: '개인정보 보호정책',
+                termsOfService: '이용약관',
+                contactEmail: '질문이 있으시면 문의하세요<br>support@game.mail',
+                pointsMall: '포인트 몰'
+            },
+            'en': {
+                headerTitle: 'Official Recharge',
+                tierTitle: 'Select Package',
+                drawerTitle: 'Order Summary',
+                labelPackage: 'Package',
+                labelTokens: 'Tokens',
+                labelBonus: 'Bonus',
+                paymentTitle: 'Payment',
+                labelTotal: 'Total',
+                payBtn: 'Pay Now',
+                notSelected: 'Not selected',
+                loginTitle: 'Role ID Verification',
+                labelRoleId: 'Role ID',
+                loginBtn: 'Verify & Login',
+                roleIdPlaceholder: 'Enter Role ID',
+                roleInfoTitle: 'Role Verification',
+                verifyBtn: 'Verify',
+                labelServer: 'Server:',
+                labelRoleName: 'Role Name:',
+                reenterBtn: 'Re-enter',
+                labelRoleInfo: 'Role Info',
+                labelQuantity: 'Quantity',
+                privacyPolicy: 'Privacy Policy',
+                termsOfService: 'Terms of Service',
+                contactEmail: 'If you have any questions, contact<br>support@game.mail',
+                pointsMall: 'Points Mall'
+            }
+        };
+
+        const tierData = [
+            { id: 1, tokens: 60, bonus: 0, price: 0.99, points: 60, highlight: true, hot: false },
+            { id: 2, tokens: 300, bonus: 30, price: 4.99, points: 300, highlight: true, hot: true },
+            { id: 3, tokens: 980, bonus: 196, price: 9.99, points: 980, highlight: false, hot: false },
+            { id: 4, tokens: 3280, bonus: 984, price: 29.99, points: 3280, highlight: false, hot: false },
+            { id: 5, tokens: 6480, bonus: 2592, price: 99.99, points: 6480, highlight: false, hot: false },
+            { id: 6, tokens: 12960, bonus: 6480, price: 199.99, points: 12960, highlight: false, hot: false }
+        ];
+
+        const giftPackageData = [
+            {
+                id: 'gift1',
+                name: {
+                    'zh-CN': '新手礼包',
+                    'zh-TW': '新手禮包',
+                    'ja': '初心者パック',
+                    'ko': '초보자 패키지',
+                    'en': 'Starter Pack'
+                },
+                image: 'libao.png',
+                items: [
+                    { name: { 'zh-CN': '金币', 'zh-TW': '金幣', 'ja': 'ゴールド', 'ko': '골드', 'en': 'Gold' }, quantity: 1000, icon: '💰' },
+                    { name: { 'zh-CN': '钻石', 'zh-TW': '鑽石', 'ja': 'ダイヤ', 'ko': '다이아', 'en': 'Diamond' }, quantity: 50, icon: '💎' },
+                    { name: { 'zh-CN': '经验药水', 'zh-TW': '經驗藥水', 'ja': '経験薬', 'ko': '경험 물약', 'en': 'EXP Potion' }, quantity: 5, icon: '🧪' }
+                ],
+                limit: { 'zh-CN': '限购1次', 'zh-TW': '限購1次', 'ja': '購入制限1回', 'ko': '구매 제한 1회', 'en': 'Limit 1' },
+                originalPrice: 9.99,
+                price: 4.99
+            },
+            {
+                id: 'gift2',
+                name: {
+                    'zh-CN': '豪华礼包',
+                    'zh-TW': '豪華禮包',
+                    'ja': 'デラックスパック',
+                    'ko': '디럭스 패키지',
+                    'en': 'Deluxe Pack'
+                },
+                image: 'libao.png',
+                items: [
+                    { name: { 'zh-CN': '金币', 'zh-TW': '金幣', 'ja': 'ゴールド', 'ko': '골드', 'en': 'Gold' }, quantity: 5000, icon: '💰' },
+                    { name: { 'zh-CN': '钻石', 'zh-TW': '鑽石', 'ja': 'ダイヤ', 'ko': '다이아', 'en': 'Diamond' }, quantity: 200, icon: '💎' },
+                    { name: { 'zh-CN': '高级装备箱', 'zh-TW': '高級裝備箱', 'ja': '高級装備箱', 'ko': '고급 장비 상자', 'en': 'Premium Gear Box' }, quantity: 3, icon: '📦' },
+                    { name: { 'zh-CN': '经验药水', 'zh-TW': '經驗藥水', 'ja': '経験薬', 'ko': '경험 물약', 'en': 'EXP Potion' }, quantity: 10, icon: '🧪' }
+                ],
+                limit: { 'zh-CN': '限购3次', 'zh-TW': '限購3次', 'ja': '購入制限3回', 'ko': '구매 제한 3회', 'en': 'Limit 3' },
+                originalPrice: 29.99,
+                price: 19.99
+            },
+            {
+                id: 'gift3',
+                name: {
+                    'zh-CN': '至尊礼包',
+                    'zh-TW': '至尊禮包',
+                    'ja': 'スプリームパック',
+                    'ko': '슈프림 패키지',
+                    'en': 'Supreme Pack'
+                },
+                image: 'libao.png',
+                items: [
+                    { name: { 'zh-CN': '金币', 'zh-TW': '金幣', 'ja': 'ゴールド', 'ko': '골드', 'en': 'Gold' }, quantity: 10000, icon: '💰' },
+                    { name: { 'zh-CN': '钻石', 'zh-TW': '鑽石', 'ja': 'ダイヤ', 'ko': '다이아', 'en': 'Diamond' }, quantity: 500, icon: '💎' },
+                    { name: { 'zh-CN': '传说装备箱', 'zh-TW': '傳說裝備箱', 'ja': '伝説装備箱', 'ko': '전설 장비 상자', 'en': 'Legendary Gear Box' }, quantity: 5, icon: '🎁' },
+                    { name: { 'zh-CN': '经验药水', 'zh-TW': '經驗藥水', 'ja': '経験薬', 'ko': '경험 물약', 'en': 'EXP Potion' }, quantity: 20, icon: '🧪' },
+                    { name: { 'zh-CN': '稀有宠物蛋', 'zh-TW': '稀有寵物蛋', 'ja': 'レアペット卵', 'ko': '희귀 펫 알', 'en': 'Rare Pet Egg' }, quantity: 1, icon: '🥚' }
+                ],
+                limit: { 'zh-CN': '限购5次', 'zh-TW': '限購5次', 'ja': '購入制限5回', 'ko': '구매 제한 5회', 'en': 'Limit 5' },
+                originalPrice: 99.99,
+                price: 49.99
+            }
+        ];
+
+        let selectedGiftPackageId = null;
+
+        function renderGiftPackages() {
+            const giftPackageList = document.getElementById('giftPackageList');
+            const rate = regionCurrencyMap[currentRegion].rate;
+            const symbol = currentCurrencySymbol;
+            
+            giftPackageList.innerHTML = giftPackageData.map(gift => {
+                const convertedPrice = (gift.price * rate).toFixed(2);
+                const convertedOriginalPrice = (gift.originalPrice * rate).toFixed(2);
+                const giftName = gift.name[currentLang] || gift.name['en'];
+                const giftLimit = gift.limit[currentLang] || gift.limit['en'];
+                
+                return `
+                    <div class="gift-package-card" onclick="selectGiftPackage('${gift.id}')">
+                        <img src="${gift.image}" alt="${giftName}" class="gift-package-image">
+                        <div class="gift-package-content">
+                            <div class="gift-package-name">${giftName}</div>
+                            <div class="gift-package-items">
+                                ${gift.items.map(item => {
+                                    const itemName = item.name[currentLang] || item.name['en'];
+                                    return `<div class="gift-item">
+                                        <span class="gift-item-icon">${item.icon}</span>
+                                        <span>${itemName} x${item.quantity}</span>
+                                    </div>`;
+                                }).join('')}
+                            </div>
+                            <div class="gift-package-limit">${giftLimit}</div>
+                        </div>
+                        <div class="gift-package-price-section">
+                            <div class="gift-package-original-price">${symbol}${convertedOriginalPrice}</div>
+                            <div class="gift-package-price">${symbol}${convertedPrice}</div>
+                            <div class="gift-package-currency">${currentCurrency}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function selectGiftPackage(id) {
+            if (!isLoggedIn) {
+                alert('请先验证角色ID');
+                document.getElementById('roleIdInputCard').focus();
+                return;
+            }
+
+            document.querySelectorAll('.gift-package-card').forEach(card => card.classList.remove('selected'));
+            event.currentTarget.classList.add('selected');
+            selectedGiftPackageId = id;
+
+            const gift = giftPackageData.find(g => g.id === id);
+            const giftName = gift.name[currentLang] || gift.name['en'];
+            
+            // 更新订单摘要 - 道具礼包模式
+            const rate = regionCurrencyMap[currentRegion].rate;
+            const convertedPrice = (gift.price * rate).toFixed(2);
+            
+            // 隐藏代币相关字段
+            document.getElementById('tokenAmountItem').style.display = 'none';
+            document.getElementById('bonusAmountItem').style.display = 'none';
+            
+            // 显示礼包相关字段
+            document.getElementById('giftNameItem').style.display = 'flex';
+            document.getElementById('giftContentItem').style.display = 'flex';
+            
+            document.getElementById('roleInfoSummary').textContent = `${serverName} - ${roleName}`;
+            document.getElementById('giftNameValue').textContent = giftName;
+            
+            // 显示礼包内容
+            const giftContentHtml = gift.items.map(item => {
+                const itemName = item.name[currentLang] || item.name['en'];
+                return `<div class="gift-item">
+                    <span class="gift-item-icon">${item.icon}</span>
+                    <span>${itemName} x${item.quantity}</span>
+                </div>`;
+            }).join('');
+            document.getElementById('giftContentValue').innerHTML = giftContentHtml;
+            
+            // 礼包也赠送积分，积分等于价格（美元）* 100
+            const giftPoints = Math.floor(gift.price * 100);
+            document.getElementById('pointsAmount').textContent = giftPoints;
+            
+            document.getElementById('quantityAmount').textContent = '1';
+            document.getElementById('totalPrice').textContent = currentCurrencySymbol + convertedPrice;
+            
+            currentPrice = gift.price;
+            currentQuantity = 1;
+            selectedTierId = null; // 清除代币选择
+            selectedPaymentMethod = null; // 清除支付方式选择
+            
+            // 清除支付方式选择状态
+            document.querySelectorAll('.payment-option').forEach(option => option.classList.remove('selected'));
+            
+            // 显示支付抽屉
+            showDrawer();
+            updatePayButton();
+        }
+
+
+        function switchRechargeTab(tabName) {
+            // 移除所有按钮的active类
+            document.querySelectorAll('.recharge-tab-btn').forEach(btn => btn.classList.remove('active'));
+            // 移除所有内容的active类
+            document.querySelectorAll('.recharge-tab-content').forEach(content => content.classList.remove('active'));
+            
+            // 添加active类到对应的按钮和内容
+            if (tabName === 'token') {
+                event.currentTarget.classList.add('active');
+                document.getElementById('tokenTab').classList.add('active');
+            } else if (tabName === 'gift') {
+                event.currentTarget.classList.add('active');
+                document.getElementById('giftTab').classList.add('active');
+                renderGiftPackages();
+            }
+        }
+
+        function renderTierCards() {
+
+            const tierGrid = document.getElementById('tierGrid');
+            const rate = regionCurrencyMap[currentRegion].rate;
+            const symbol = currentCurrencySymbol;
+            
+            tierGrid.innerHTML = tierData.map(tier => {
+                const convertedPrice = (tier.price * rate).toFixed(2);
+                const hasBonus = tier.bonus > 0;
+                const highlightClass = tier.highlight ? ' highlight' : '';
+                
+                return `
+                    <div class="tier-card${highlightClass}" onclick="selectTier(${tier.id})">
+                        ${tier.hot ? '<div class="tier-hot-badge">HOT</div>' : ''}
+                        <div class="tier-points">${tier.points}积分</div>
+                        <div class="tier-content">
+                            <div class="tier-left">
+                                <div class="tier-tokens-section">
+                                    <div class="token-icon"><img src="haiwaidaibi.png" alt="代币"></div>
+                                    <div class="token-info">
+                                        <div class="token-amount">${tier.tokens}</div>
+                                    </div>
+                                </div>
+                                ${hasBonus ? `
+                                <div class="tier-bonus-section">
+                                    <div class="bonus-icon"><img src="haiwaidaibi.png" alt="赠送"></div>
+                                    <div class="bonus-info">
+                                        <div class="bonus-amount">+${tier.bonus}</div>
+                                    </div>
+                                </div>
+                                ` : ''}
+                            </div>
+                            <div class="tier-price-section">
+                                <span class="tier-price">${symbol}${convertedPrice}</span>
+                                <span class="tier-currency">${currentCurrency}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleRegionDropdown() {
+            const dropdown = document.getElementById('regionDropdown');
+            dropdown.classList.toggle('show');
+        }
+
+        function selectRegion(region, regionName, lang) {
+            currentRegion = region;
+            currentLang = lang;
+            const currencyInfo = regionCurrencyMap[region];
+            currentCurrency = currencyInfo.currency;
+            currentCurrencySymbol = currencyInfo.symbol;
+            
+            document.getElementById('currentRegion').textContent = regionName;
+            document.getElementById('regionDropdown').classList.remove('show');
+            
+            document.querySelectorAll('.region-item').forEach(item => item.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            
+            updateLanguage();
+            renderTierCards();
+        }
+
+        function updateLanguage() {
+            const t = translations[currentLang];
+            document.getElementById('headerTitle').textContent = t.headerTitle;
+            document.getElementById('tierTitle').textContent = t.tierTitle;
+            document.getElementById('drawerTitle').textContent = t.drawerTitle;
+            document.getElementById('labelPackage').textContent = t.labelPackage;
+            document.getElementById('labelTokens').textContent = t.labelTokens;
+            document.getElementById('labelBonus').textContent = t.labelBonus;
+            document.getElementById('paymentTitle').textContent = t.paymentTitle;
+            document.getElementById('labelTotal').textContent = t.labelTotal;
+            document.getElementById('payBtn').textContent = t.payBtn;
+            document.getElementById('selectedItem').textContent = t.notSelected;
+            document.getElementById('loginTitle').textContent = t.loginTitle;
+            document.getElementById('labelRoleId').textContent = t.labelRoleId;
+            document.getElementById('roleIdInput').placeholder = t.roleIdPlaceholder;
+            document.getElementById('loginBtn').textContent = t.loginBtn;
+            document.getElementById('roleInfoTitle').textContent = t.roleInfoTitle;
+            document.getElementById('roleIdInputCard').placeholder = t.roleIdPlaceholder;
+            document.getElementById('verifyBtn').textContent = t.verifyBtn;
+            document.getElementById('labelServer').textContent = t.labelServer;
+            document.getElementById('labelRoleName').textContent = t.labelRoleName;
+            document.getElementById('reenterBtn').textContent = t.reenterBtn;
+            document.getElementById('labelRoleInfo').textContent = t.labelRoleInfo;
+            document.getElementById('labelQuantity').textContent = t.labelQuantity;
+            document.getElementById('privacyPolicy').textContent = t.privacyPolicy;
+            document.getElementById('termsOfService').textContent = t.termsOfService;
+            document.getElementById('contactEmail').innerHTML = t.contactEmail;
+            document.getElementById('pointsMallBtn').textContent = t.pointsMall;
+        }
+
+        function verifyRole() {
+            const roleId = document.getElementById('roleIdInputCard').value;
+            if (!roleId) {
+                alert(translations[currentLang].roleIdPlaceholder);
+                return;
+            }
+
+            const mockRoles = {
+                '10001': { server: 'Server 1', name: 'Player001' },
+                '10002': { server: 'Server 2', name: 'Player002' },
+                '10003': { server: 'Server 3', name: 'Player003' }
+            };
+            
+            const roleData = mockRoles[roleId];
+            if (roleData) {
+                isLoggedIn = true;
+                userRoleId = roleId;
+                serverName = roleData.server;
+                roleName = roleData.name;
+                localStorage.setItem('userRoleId', roleId);
+                localStorage.setItem('serverName', serverName);
+                localStorage.setItem('roleName', roleName);
+                showRoleInfo();
+                alert('验证成功！');
+            } else {
+                alert('角色ID不存在！');
+            }
+        }
+
+        function showRoleInfo() {
+            document.getElementById('serverName').textContent = serverName;
+            document.getElementById('roleName').textContent = roleName;
+            document.getElementById('roleInfoDisplay').classList.add('show');
+            document.querySelector('.role-input-group').classList.add('hide');
+        }
+
+        function reenterRoleId() {
+            isLoggedIn = false;
+            userRoleId = '';
+            serverName = '';
+            roleName = '';
+            localStorage.removeItem('userRoleId');
+            localStorage.removeItem('serverName');
+            localStorage.removeItem('roleName');
+            document.getElementById('roleInfoDisplay').classList.remove('show');
+            document.querySelector('.role-input-group').classList.remove('hide');
+            document.getElementById('roleIdInputCard').value = '';
+        }
+
+        function logout() {
+            reenterRoleId();
+        }
+
+        function handleLogin(event) {
+            event.preventDefault();
+            closeLogin();
+        }
+
+        function closeLogin() {
+            if (!isLoggedIn) {
+                alert('请先登录');
+                return;
+            }
+            document.getElementById('loginModal').classList.remove('show');
+        }
+
+        function selectTier(id) {
+            if (!isLoggedIn) {
+                alert('请先验证角色ID');
+                document.getElementById('roleIdInputCard').focus();
+                return;
+            }
+
+            document.querySelectorAll('.tier-card').forEach(card => card.classList.remove('selected'));
+            event.currentTarget.classList.add('selected');
+            selectedTierId = id;
+
+            const tier = tierData.find(t => t.id === id);
+            currentTokens = tier.tokens;
+            currentBonus = tier.bonus;
+            currentPrice = tier.price;
+            currentPoints = tier.points;
+            currentQuantity = 1;
+
+            // 显示代币相关字段，隐藏礼包相关字段
+            document.getElementById('tokenAmountItem').style.display = 'flex';
+            document.getElementById('bonusAmountItem').style.display = 'flex';
+            document.getElementById('giftNameItem').style.display = 'none';
+            document.getElementById('giftContentItem').style.display = 'none';
+
+            selectedGiftPackageId = null; // 清除礼包选择
+            selectedPaymentMethod = null; // 清除支付方式选择
+            
+            // 清除支付方式选择状态
+            document.querySelectorAll('.payment-option').forEach(option => option.classList.remove('selected'));
+
+            // 更新订单摘要
+            const rate = regionCurrencyMap[currentRegion].rate;
+            const totalPrice = currentPrice * currentQuantity * rate;
+            const totalPoints = currentPoints * currentQuantity;
+            
+            document.getElementById('roleInfoSummary').textContent = `${serverName} - ${roleName}`;
+            document.getElementById('tokenAmount').textContent = currentTokens;
+            document.getElementById('bonusAmount').textContent = currentBonus;
+            document.getElementById('pointsAmount').textContent = totalPoints;
+            document.getElementById('quantityAmount').textContent = currentQuantity;
+            document.getElementById('totalPrice').textContent = currentCurrencySymbol + totalPrice.toFixed(2);
+            
+            updatePayButton();
+            showDrawer();
+        }
+
+        function selectPayment(method) {
+            document.querySelectorAll('.payment-option').forEach(option => option.classList.remove('selected'));
+            event.currentTarget.classList.add('selected');
+            selectedPaymentMethod = method;
+            updatePayButton();
+        }
+
+        function increaseQuantity() {
+            if (currentQuantity < 99) {
+                currentQuantity++;
+                updateOrderSummaryQuantity();
+            }
+        }
+
+        function decreaseQuantity() {
+            if (currentQuantity > 1) {
+                currentQuantity--;
+                updateOrderSummaryQuantity();
+            }
+        }
+
+        function updateOrderSummaryQuantity() {
+            const rate = regionCurrencyMap[currentRegion].rate;
+            
+            if (selectedTierId) {
+                // 代币模式
+                const totalTokens = currentTokens * currentQuantity;
+                const totalBonus = currentBonus * currentQuantity;
+                const totalPoints = currentPoints * currentQuantity;
+                const totalPrice = currentPrice * currentQuantity * rate;
+                
+                document.getElementById('tokenAmount').textContent = totalTokens;
+                document.getElementById('bonusAmount').textContent = totalBonus;
+                document.getElementById('pointsAmount').textContent = totalPoints;
+                document.getElementById('quantityAmount').textContent = currentQuantity;
+                document.getElementById('totalPrice').textContent = currentCurrencySymbol + totalPrice.toFixed(2);
+            } else if (selectedGiftPackageId) {
+                // 礼包模式 - 礼包也赠送积分，积分等于价格（美元）* 100
+                const giftPoints = Math.floor(currentPrice * 100) * currentQuantity;
+                const totalPrice = currentPrice * currentQuantity * rate;
+                
+                document.getElementById('pointsAmount').textContent = giftPoints;
+                document.getElementById('quantityAmount').textContent = currentQuantity;
+                document.getElementById('totalPrice').textContent = currentCurrencySymbol + totalPrice.toFixed(2);
+            }
+        }
+
+        function updateOrderSummary() {
+            const t = translations[currentLang];
+            const totalTokens = currentTokens * currentQuantity;
+            const totalBonus = currentBonus * currentQuantity;
+            const rate = regionCurrencyMap[currentRegion].rate;
+            const totalPrice = currentPrice * currentQuantity * rate;
+            
+            document.getElementById('roleInfoSummary').textContent = `${serverName} - ${roleName}`;
+            document.getElementById('selectedItem').textContent = `${currentTokens} tokens`;
+            document.getElementById('tokenAmount').textContent = totalTokens;
+            document.getElementById('bonusAmount').textContent = totalBonus;
+            document.getElementById('quantityAmount').textContent = currentQuantity;
+            document.getElementById('totalPrice').textContent = currentCurrencySymbol + totalPrice.toFixed(2);
+            updatePayButton();
+        }
+
+        function updatePayButton() {
+            const payBtn = document.getElementById('payBtn');
+            payBtn.disabled = !((selectedTierId || selectedGiftPackageId) && selectedPaymentMethod);
+        }
+
+        function showDrawer() {
+            document.getElementById('paymentDrawer').classList.add('show');
+        }
+
+        function closeDrawer() {
+            document.getElementById('paymentDrawer').classList.remove('show');
+        }
+
+        function handlePay() {
+            if (!isLoggedIn) {
+                alert('请先验证角色ID');
+                return;
+            }
+            if (!selectedTierId || !selectedPaymentMethod) {
+                alert('请选择支付方式');
+                return;
+            }
+            const rate = regionCurrencyMap[currentRegion].rate;
+            const totalPrice = currentPrice * currentQuantity * rate;
+            alert(`正在处理支付...\n角色ID: ${userRoleId}\n金额: ${currentCurrencySymbol}${totalPrice.toFixed(2)}`);
+        }
+
+        function showHelpModal() {
+            const t = translations[currentLang];
+            document.getElementById('helpTitle').textContent = t.helpTitle;
+            
+            const helpSections = document.getElementById('helpSections');
+            helpSections.innerHTML = `
+                <div class="help-section">
+                    <div class="help-section-title">
+                        <span class="help-section-icon">💰</span>
+                        <span>${t.helpSection1Title}</span>
+                    </div>
+                    <div class="help-section-content">${t.helpSection1Content}</div>
+                </div>
+                <div class="help-section">
+                    <div class="help-section-title">
+                        <span class="help-section-icon">📝</span>
+                        <span>${t.helpSection2Title}</span>
+                    </div>
+                    <div class="help-section-content">${t.helpSection2Content}</div>
+                </div>
+                <div class="help-section">
+                    <div class="help-section-title">
+                        <span class="help-section-icon">🎁</span>
+                        <span>${t.helpSection3Title}</span>
+                    </div>
+                    <div class="help-section-content">${t.helpSection3Content}</div>
+                </div>
+                <div class="help-section">
+                    <div class="help-section-title">
+                        <span class="help-section-icon">⚠️</span>
+                        <span>${t.helpSection4Title}</span>
+                    </div>
+                    <div class="help-section-content">${t.helpSection4Content}</div>
+                </div>
+            `;
+            
+            document.getElementById('helpModal').classList.add('show');
+        }
+
+        function closeHelpModal() {
+            document.getElementById('helpModal').classList.remove('show');
+        }
+
+        function showRoleIdHelpModal() {
+            const t = translations[currentLang];
+            document.getElementById('helpTitle').textContent = t.roleIdHelpTitle || '如何获取角色ID？';
+            
+            const helpSections = document.getElementById('helpSections');
+            helpSections.innerHTML = `
+                <div class="help-section">
+                    <div class="help-section-title">
+                        <span class="help-section-icon">🎮</span>
+                        <span>${t.roleIdHelpSection1Title || '游戏内查看'}</span>
+                    </div>
+                    <div class="help-section-content">${t.roleIdHelpSection1Content || '在游戏中打开设置菜单，点击账号信息选项卡，即可查看您的角色ID。'}</div>
+                </div>
+                <div class="help-section">
+                    <div class="help-section-title">
+                        <span class="help-section-icon">📍</span>
+                        <span>${t.roleIdHelpSection2Title || '角色ID位置'}</span>
+                    </div>
+                    <div class="help-section-content">${t.roleIdHelpSection2Content || '<ul><li>📱 主界面 → 设置按钮</li><li>👤 账号信息 → 角色ID</li><li>📋 长按角色ID可复制</li></ul>'}</div>
+                </div>
+                <div class="help-section">
+                    <div class="help-section-title">
+                        <span class="help-section-icon">⚠️</span>
+                        <span>${t.roleIdHelpSection3Title || '注意事项'}</span>
+                    </div>
+                    <div class="help-section-content">${t.roleIdHelpSection3Content || '<div class="help-warning">⚠️ 请确保输入正确的角色ID</div>'}</div>
+                </div>
+            `;
+            
+            document.getElementById('helpModal').classList.add('show');
+        }
+
+        const customerServiceUrls = {
+            'zh-CN': 'https://support.game.com/zh-cn',
+            'zh-TW': 'https://support.game.com/zh-tw',
+            'ja': 'https://support.game.com/ja',
+            'ko': 'https://support.game.com/ko',
+            'en': 'https://support.game.com/en'
+        };
+
+        function openCustomerService() {
+            const url = customerServiceUrls[currentLang] || customerServiceUrls['en'];
+            window.open(url, '_blank');
+        }
+
+        // 新手引导功能
+        let currentGuideStep = 0;
+        const guideSteps = [
+            {
+                element: 'roleInfoCard',
+                title: '第一步：角色验证',
+                content: '请输入您的角色ID并点击验证按钮进行验证',
+                position: 'bottom'
+            },
+            {
+                element: 'tierGrid',
+                title: '第二步：选择礼包',
+                content: '选择您需要购买的代币礼包，高亮礼包有特别优惠',
+                position: 'bottom'
+            },
+            {
+                element: 'paymentGrid',
+                title: '第三步：选择支付方式',
+                content: '在订单摘要中选择您的支付方式',
+                position: 'top'
+            },
+            {
+                element: 'payBtn',
+                title: '第四步：完成支付',
+                content: '确认订单信息无误后，点击立即支付按钮完成充值',
+                position: 'top'
+            }
+        ];
+
+        function startGuide() {
+            const hasSeenGuide = localStorage.getItem('hasSeenGuide');
+            if (hasSeenGuide) return;
+            
+            currentGuideStep = 0;
+            showGuideStep(currentGuideStep);
+        }
+
+        function showGuideStep(step) {
+            if (step >= guideSteps.length) {
+                endGuide();
+                return;
+            }
+
+            const guideData = guideSteps[step];
+            
+            // 特殊处理：如果是支付网格或支付按钮步骤，需要先打开抽屉
+            if ((guideData.element === 'paymentGrid' || guideData.element === 'payBtn')) {
+                const drawer = document.getElementById('paymentDrawer');
+                if (!drawer.classList.contains('show')) {
+                    // 模拟选择一个礼包以打开抽屉
+                    const firstTier = tierData[0];
+                    selectedTierId = firstTier.id;
+                    currentTokens = firstTier.tokens;
+                    currentBonus = firstTier.bonus;
+                    currentPrice = firstTier.price;
+                    updateOrderSummary();
+                    showDrawer();
+                    
+                    // 等待抽屉动画完成后再继续引导
+                    setTimeout(() => {
+                        continueGuideStep(step, guideData);
+                    }, 400);
+                    return;
+                }
+            }
+            
+            continueGuideStep(step, guideData);
+        }
+        
+        function continueGuideStep(step, guideData) {
+            const element = document.getElementById(guideData.element);
+            
+            if (!element) {
+                nextGuideStep();
+                return;
+            }
+
+            // 显示遮罩层
+            document.getElementById('guideOverlay').classList.add('show');
+            
+            // 高亮元素
+            element.classList.add('guide-highlight');
+            
+            // 更新提示框内容
+            document.getElementById('guideStep').textContent = step + 1;
+            document.getElementById('guideTitle').textContent = guideData.title;
+            document.getElementById('guideContent').textContent = guideData.content;
+            
+            // 显示提示框
+            const tooltip = document.getElementById('guideTooltip');
+            tooltip.style.display = 'block';
+            
+            // 计算提示框位置
+            positionTooltip(element, tooltip, guideData.position);
+        }
+
+        function positionTooltip(element, tooltip, position) {
+            const rect = element.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+            
+            let top, left;
+            
+            if (position === 'bottom') {
+                top = rect.bottom + 10;
+                left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+                
+                // 如果底部空间不足，改为显示在顶部
+                if (top + tooltipRect.height > window.innerHeight - 20) {
+                    top = rect.top - tooltipRect.height - 10;
+                }
+            } else if (position === 'top') {
+                top = rect.top - tooltipRect.height - 10;
+                left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+                
+                // 如果顶部空间不足，改为显示在底部
+                if (top < 10) {
+                    top = rect.bottom + 10;
+                }
+            }
+            
+            // 确保提示框不超出屏幕左右边界
+            if (left < 10) left = 10;
+            if (left + tooltipRect.width > window.innerWidth - 10) {
+                left = window.innerWidth - tooltipRect.width - 10;
+            }
+            
+            // 确保提示框不超出屏幕上下边界
+            if (top < 10) top = 10;
+            if (top + tooltipRect.height > window.innerHeight - 20) {
+                top = window.innerHeight - tooltipRect.height - 20;
+            }
+            
+            tooltip.style.top = top + 'px';
+            tooltip.style.left = left + 'px';
+            
+            // 只对非抽屉元素进行滚动
+            if (guideData.element !== 'paymentDrawer') {
+                const elementCenter = rect.top + rect.height / 2;
+                
+                if (elementCenter < 100 || elementCenter > window.innerHeight - 100) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // 重新计算位置
+                    setTimeout(() => {
+                        const newRect = element.getBoundingClientRect();
+                        if (position === 'bottom') {
+                            top = newRect.bottom + 10;
+                        } else {
+                            top = newRect.top - tooltipRect.height - 10;
+                        }
+                        left = newRect.left + (newRect.width / 2) - (tooltipRect.width / 2);
+                        
+                        if (left < 10) left = 10;
+                        if (left + tooltipRect.width > window.innerWidth - 10) {
+                            left = window.innerWidth - tooltipRect.width - 10;
+                        }
+                        if (top < 10) top = 10;
+                        if (top + tooltipRect.height > window.innerHeight - 20) {
+                            top = window.innerHeight - tooltipRect.height - 20;
+                        }
+                        
+                        tooltip.style.top = top + 'px';
+                        tooltip.style.left = left + 'px';
+                    }, 300);
+                }
+            }
+        }
+
+        function nextGuideStep() {
+            // 移除当前高亮
+            if (currentGuideStep < guideSteps.length) {
+                const currentElement = document.getElementById(guideSteps[currentGuideStep].element);
+                if (currentElement) {
+                    currentElement.classList.remove('guide-highlight');
+                }
+            }
+            
+            currentGuideStep++;
+            
+            if (currentGuideStep < guideSteps.length) {
+                showGuideStep(currentGuideStep);
+            } else {
+                endGuide();
+            }
+        }
+
+        function skipGuide() {
+            endGuide();
+        }
+
+        function endGuide() {
+            // 移除所有高亮
+            document.querySelectorAll('.guide-highlight').forEach(el => {
+                el.classList.remove('guide-highlight');
+            });
+            
+            // 隐藏遮罩和提示框
+            document.getElementById('guideOverlay').classList.remove('show');
+            document.getElementById('guideTooltip').style.display = 'none';
+            
+            // 关闭支付抽屉（如果打开了）
+            closeDrawer();
+            
+            // 标记已看过引导
+            localStorage.setItem('hasSeenGuide', 'true');
+            
+            currentGuideStep = 0;
+        }
+
+        function addToBookmark() {
+            // 尝试使用浏览器的收藏功能
+            if (window.sidebar && window.sidebar.addPanel) {
+                // Firefox
+                window.sidebar.addPanel(document.title, window.location.href, '');
+            } else if (window.external && ('AddFavorite' in window.external)) {
+                // IE
+                window.external.AddFavorite(window.location.href, document.title);
+            } else if (window.opera && window.print) {
+                // Opera
+                alert('请按 Ctrl+D 将本页加入收藏夹');
+            } else {
+                // 其他浏览器（Chrome, Safari等）
+                alert('请按 Ctrl+D (Windows) 或 Cmd+D (Mac) 将本页加入收藏夹');
+            }
+        }
+
+        function switchTab(tabName) {
+            // 移除所有tab按钮的active类
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            // 移除所有tab内容的active类
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // 添加active类到对应的按钮和内容
+            if (tabName === 'recharge') {
+                event.currentTarget.classList.add('active');
+                document.getElementById('rechargeTab').classList.add('active');
+            } else if (tabName === 'activity') {
+                event.currentTarget.classList.add('active');
+                document.getElementById('activityTab').classList.add('active');
+            }
+        }
+
+        function openPointsMall() {
+            // 根据当前地区跳转到对应的积分商城
+            const pointsMallUrls = {
+                'cn': 'https://points.game.com/cn',
+                'tw': 'https://points.game.com/tw',
+                'jp': 'https://points.game.com/jp',
+                'kr': 'https://points.game.com/kr',
+                'us': 'https://points.game.com/us',
+                'ca': 'https://points.game.com/ca',
+                'uk': 'https://points.game.com/uk',
+                'de': 'https://points.game.com/de',
+                'others': 'https://points.game.com/en'
+            };
+            
+            const url = pointsMallUrls[currentRegion] || pointsMallUrls['others'];
+            window.open(url, '_blank');
+        }
+
+        function switchRoleInDrawer() {
+            // 关闭支付抽屉
+            closeDrawer();
+            // 清空当前角色信息
+            reenterRoleId();
+            // 滚动到角色验证区域
+            document.getElementById('roleInfoCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function addToHomeScreen() {
+            alert('请点击浏览器菜单，选择"添加到主屏幕"');
+        }
+
+        window.addEventListener('DOMContentLoaded', function() {
+            const savedRoleId = localStorage.getItem('userRoleId');
+            const savedServerName = localStorage.getItem('serverName');
+            const savedRoleName = localStorage.getItem('roleName');
+            if (savedRoleId && savedServerName && savedRoleName) {
+                isLoggedIn = true;
+                userRoleId = savedRoleId;
+                serverName = savedServerName;
+                roleName = savedRoleName;
+                document.getElementById('roleIdInputCard').value = savedRoleId;
+                showRoleInfo();
+            }
+            renderTierCards();
+            
+            // 启动新手引导（延迟1秒以确保页面完全加载）
+            setTimeout(startGuide, 1000);
+        });
+
+        document.addEventListener('click', function(event) {
+            const regionSelector = document.querySelector('.region-selector');
+            const regionDropdown = document.getElementById('regionDropdown');
+            const headerRight = document.querySelector('.header-right');
+            if (!headerRight.contains(event.target) && !regionDropdown.contains(event.target)) {
+                regionDropdown.classList.remove('show');
+            }
+        });
+    </script>
+
+    <div class="guide-overlay" id="guideOverlay"></div>
+    <div class="guide-tooltip" id="guideTooltip" style="display: none;">
+        <div class="guide-tooltip-title">
+            <span class="guide-tooltip-step" id="guideStep">1</span>
+            <span id="guideTitle">角色验证</span>
+        </div>
+        <div class="guide-tooltip-content" id="guideContent">
+            请输入您的角色ID并点击验证按钮进行验证
+        </div>
+        <div class="guide-tooltip-actions">
+            <button class="guide-btn guide-btn-skip" onclick="skipGuide()">跳过</button>
+            <button class="guide-btn guide-btn-next" onclick="nextGuideStep()">下一步</button>
+        </div>
+    </div>
+
+    <div class="customer-service-float" onclick="openCustomerService()">
+        <img src="客服 (2).png" alt="客服" class="customer-service-icon">
+    </div>
+
+    <div class="footer">
+        <div class="footer-content">
+            <div class="footer-left">
+                <div class="social-links">
+                    <div class="social-link" onclick="window.open('https://twitter.com', '_blank')">
+                        <img src="推特.png" alt="Twitter">
+                    </div>
+                    <div class="social-link" onclick="window.open('https://facebook.com', '_blank')">
+                        <img src="Facebook.png" alt="Facebook">
+                    </div>
+                    <div class="social-link" onclick="window.open('https://discord.com', '_blank')">
+                        <img src="discord.png" alt="Discord">
+                    </div>
+                </div>
+            </div>
+            <div class="footer-right">
+                <div class="policy-links">
+                    <a class="policy-link" onclick="alert('Privacy Policy')" id="privacyPolicy">Privacy Policy</a>
+                    <a class="policy-link" onclick="alert('Terms of Service')" id="termsOfService">Terms</a>
+                </div>
+                <div class="contact-email" id="contactEmail">
+                    If you have any questions, contact<br>support@game.mail
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRD 文档查看按钮（页面右侧空白区，不影响充值页布局） -->
+    <!-- PRD Float Button -->
+    <button id="prdFloatBtn" onclick="openPrdPanel()" title="查看PRD文档">PRD</button>
+
+    <!-- PRD 文档侧面板 -->
+    <div id="prdPanel">
+        <div id="prdPanelHeader">
+            <span>📄 PRD 文档</span>
+            <button onclick="closePrdPanel()">✕</button>
+        </div>
+        <div id="prdPanelMain">
+            <div id="prdVersionSidebar">
+                <div class="prd-version-title">版本历史</div>
+                <ul id="prdVersionList">
+            <li class="prd-version-item active" onclick="switchPrdVersion(0)" title="v1.1 (最新)">
+                <div class="prd-version-label">v1.1 (最新)</div>
+                <div class="prd-version-date">2026-04-01</div>
+            </li>
+                </ul>
+                <div id="prdTocBox">
+                    <div class="prd-toc-title">目录</div>
+                    <ul id="prdTocList"></ul>
+                </div>
+            </div>
+            <div id="prdPanelBody">加载中…</div>
+        </div>
+    </div>
+
+    <style>
+        #prdFloatBtn {
+            position: fixed;
+            top: 12px;
+            left: calc(50% + 252px);
+            writing-mode: horizontal-tb;
+            padding: 7px 14px;
+            background: #722ed1;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            cursor: pointer;
+            z-index: 8000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+            transition: background 0.2s;
+        }
+        #prdFloatBtn:hover { background: #531dab; }
+
+        #prdPanel {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 680px;
+            max-width: 100vw;
+            height: 100vh;
+            background: #fff;
+            box-shadow: -4px 0 24px rgba(0,0,0,0.18);
+            z-index: 9000;
+            flex-direction: column;
+        }
+        #prdPanel.show { display: flex; }
+
+        #prdPanelHeader {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 20px;
+            background: #722ed1;
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        #prdPanelHeader button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        #prdPanelMain {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        #prdVersionSidebar {
+            width: 160px;
+            flex-shrink: 0;
+            background: #f9f0ff;
+            border-right: 1px solid #e9d8fd;
+            overflow-y: auto;
+            padding: 12px 0;
+        }
+        .prd-version-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #722ed1;
+            padding: 0 14px 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #e9d8fd;
+            margin-bottom: 4px;
+        }
+        #prdVersionList {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .prd-version-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: background 0.15s;
+        }
+        .prd-version-item:hover {
+            background: #efe5ff;
+        }
+        .prd-version-item.active {
+            background: #efe5ff;
+            border-left-color: #722ed1;
+        }
+        .prd-version-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #333;
+        }
+        .prd-version-item.active .prd-version-label {
+            color: #722ed1;
+        }
+        .prd-version-date {
+            font-size: 10px;
+            color: #999;
+            margin-top: 2px;
+        }
+        #prdTocBox {
+            border-top: 1px solid #e9d8fd;
+            margin-top: 6px;
+            padding-top: 8px;
+        }
+        .prd-toc-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #722ed1;
+            padding: 0 14px 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        #prdTocList {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .prd-toc-item {
+            padding: 5px 14px;
+            cursor: pointer;
+            font-size: 11px;
+            line-height: 1.4;
+            color: #555;
+            border-left: 3px solid transparent;
+            transition: background 0.15s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .prd-toc-item:hover {
+            background: #efe5ff;
+            color: #722ed1;
+        }
+        .prd-toc-item.toc-h3 {
+            padding-left: 24px;
+            color: #888;
+            font-size: 10.5px;
+        }
+        .prd-toc-item.toc-h3:hover { color: #722ed1; }
+        .prd-toc-item.toc-active {
+            background: #efe5ff;
+            border-left-color: #722ed1;
+            color: #722ed1;
+        }
+
+        #prdPanelBody {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+            -webkit-overflow-scrolling: touch;
+            padding: 24px 28px;
+            font-size: 14px;
+            line-height: 1.8;
+            color: #333;
+        }
+        #prdPanelBody h1 { font-size: 20px; margin: 0 0 16px; color: #1a1a1a; }
+        #prdPanelBody h2 { font-size: 17px; margin: 28px 0 10px; color: #222; border-bottom: 2px solid #f0f0f0; padding-bottom: 6px; }
+        #prdPanelBody h3 { font-size: 15px; margin: 20px 0 8px; color: #333; }
+        #prdPanelBody h4 { font-size: 14px; margin: 16px 0 6px; color: #444; }
+        #prdPanelBody table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 13px; }
+        #prdPanelBody th { background: #f5f0ff; color: #531dab; padding: 7px 10px; text-align: left; border: 1px solid #e8e0f5; }
+        #prdPanelBody td { padding: 6px 10px; border: 1px solid #eee; vertical-align: top; }
+        #prdPanelBody tr:nth-child(even) td { background: #fafafa; }
+        #prdPanelBody code { background: #f5f5f5; padding: 1px 5px; border-radius: 3px; font-size: 12px; color: #c41d7f; }
+        #prdPanelBody pre { background: #f6f8fa; border-radius: 6px; padding: 14px; overflow-x: auto; font-size: 12px; line-height: 1.6; margin: 10px 0; }
+        #prdPanelBody pre code { background: none; padding: 0; color: #333; }
+        #prdPanelBody blockquote { border-left: 3px solid #722ed1; margin: 8px 0; padding: 6px 14px; background: #f9f0ff; color: #555; border-radius: 0 4px 4px 0; }
+        #prdPanelBody ul, #prdPanelBody ol { padding-left: 20px; margin: 6px 0; }
+        #prdPanelBody li { margin: 3px 0; }
+        #prdPanelBody hr { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+        #prdPanelBody a { color: #722ed1; }
+        #prdPanelBody strong { font-weight: 700; color: #1a1a1a; }
+    </style>
+
+    <script>
+        var prdVersions = [
+        {label:"v1.1 (最新)",date:"2026-04-01",content:"# PRD - 游戏充值中心（海外版移动端）\n\n**文档版本**：v1.1  \n**创建日期**：2026-04-01  \n**更新日期**：2026-04-01  \n**状态**：草稿  \n\n---\n\n## 1. 产品概述\n\n### 1.1 产品定位\n\n游戏充值中心（海外版）是一款面向全球玩家的 H5 移动端充值页面，支持多地区、多语言、多货币，为玩家提供代币充值和道具礼包购买服务。\n\n**C端与B端关系说明**：C端页面所有可配置内容（站点信息、支持地区、支付方式、代币档位、礼包活动、Banner、通知栏等）均由 B端的运营人员通过审核流程配置后下发，C端仅负责渲染展示和交互，不在前端硬编码业务数据。\n\n### 1.2 核心目标\n\n- 支持全球各个地区的玩家完成在线充值\n- 提供本地化语言和货币，降低跨境支付门槛\n- 通过新手引导、积分商城等功能提升转化率\n- 兼容移动端和PC端，兼容主流智能手机浏览器\n\n### 1.3 产品范围\n\n| 模块 | 描述 |\n|------|------|\n| 用户验证 | 角色ID验证或邮箱验证码验证（登录方式由B端站点配置决定） |\n| 地区/语言切换 | 多地区、多语言动态切换（支持地区列表由B端站点配置决定） |\n| 代币充值 | 动态档位列表，由B端代币配置下发，支持批量购买 |\n| 道具礼包 | 动态礼包列表，由B端礼包配置下发，含限购规则 |\n| 支付结算 | 支付方式由B端支付渠道配置下发，按地区动态展示支付渠道和本地货币 |\n| 辅助功能 | banner图、通知栏、弹窗图文内容、页脚内容、客服悬浮（链接由B端配置）、社交媒体（配置表） |\n\n---\n\n## 2. 用户角色\n\n### 2.1 主要用户\n\n**全球游戏玩家**\n\n- 需要为游戏角色充值的活跃玩家\n- 分布于中国、台湾、日本、韩国、美国、加拿大、英国、德国等地区\n- 熟悉所在地区常用支付方式（Visa/Master、PayPal、Apple Pay、Google Pay）\n\n### 2.2 用户旅程概述\n\n1. 访问充值页面（首次触发新手引导）\n2. 自动定位地区/手动选择所在地区（自动切换语言和货币）\n3. 输入角色 ID 并验证\n4. 选择代币档位或道具礼包\n5. 在订单抽屉中选择支付方式、购买数量\n6. 确认金额，点击立即支付\n\n---\n\n## 3. 功能需求\n\n### 3.1 角色验证模块\n\n#### 3.1.1 行内验证卡片\n\n| 需求编号 | 需求描述 | 优先级 |\n|---------|---------|-------|\n| F-AUTH-01 | 页面主体展示角色 ID 输入框和\"验证\"按钮 | P0 |\n| F-AUTH-02 | 输入角色 ID 后点击\"验证\"，系统查询角色信息并展示服务器名称和角色名称 | P0 |\n| F-AUTH-03 | 验证成功后，输入框组隐藏，展示角色信息区域；提供\"重新输入\"按钮 | P0 |\n| F-AUTH-04 | 点击\"重新输入\"按钮，恢复未登录状态 | P0 |\n| F-AUTH-05 | 验证失败时弹出提示，提示信息根据当前语言显示 | P0 |\n| F-AUTH-06 | 用户未验证直接选择档位时，弹出提示并定位到角色验证位置 | P0 |\n| F-AUTH-07 | 验证状态存储到浏览器 LocalStorage，后续再次访问免验证 | P1 |\n| F-AUTH-08 | 角色id输入下拉框存储用户最近登录过的10个角色 | P1 |\n| F-AUTH-09 | 角色信息卡片右侧提供\"?\"帮助按钮，点击弹窗角色 ID 获取说明 | P2 |\n\n**测试数据（Mock）**：\n\n| 角色 ID | 服务器 | 角色名称 |\n|--------|-------|---------|\n| 10001 | Server 1 | Player001 |\n| 10002 | Server 2 | Player002 |\n| 10003 | Server 3 | Player003 |\n\n---\n\n### 3.2 地区与语言切换模块\n\n| 需求编号 | 需求描述 | 优先级 |\n|---------|---------|-------|\n| F-I18N-01 | 顶栏右侧显示地区选择器，默认为\"中国\" | P0 |\n| F-I18N-02 | 点击地区选择器展开分洲下拉菜单（亚洲 / 北美洲 / 欧洲 / 其他） | P0 |\n| F-I18N-03 | 选择地区后：切换显示语言、货币符号、汇率；当前已选档位价格同步更新 | P0 |\n| F-I18N-04 | 选中地区在下拉菜单中高亮显示 | P1 |\n| F-I18N-05 | 点击页面其他区域收起下拉菜单 | P1 |\n| F-I18N-06 | 所有可见文案（按钮、标签、提示）随语言切换即时更新 | P0 |\n\n**支持地区列表**：\n\n> 地区列表由 B端站点配置的「地区配置」字段决定，C端根据接口下发的地区列表动态渲染地区选择器。以下为原型阶段的示例数据，生产环境以B端配置为准。\n\n| 洲际 | 地区 | 语言 | 货币 |\n|-----|-----|-----|-----|\n| 亚洲 | 中国 🇨🇳 | 简体中文 | CNY ¥ | \n| 亚洲 | 台湾 🇹🇼 | 繁体中文 | TWD NT$ | \n| 亚洲 | 日本 🇯🇵 | 日语 | JPY ¥ | \n| 亚洲 | 韩国 🇰🇷 | 韩语 | KRW ₩ | \n| 北美洲 | 美国 🇺🇸 | 英语 | USD $ | \n| 北美洲 | 加拿大 🇨🇦 | 英语 | CAD C$ | \n| 欧洲 | 英国 🇬🇧 | 英语 | GBP £ | \n| 欧洲 | 德国 🇩🇪 | 英语 | EUR € | \n| 其他 | Others 🌍 | 英语 | USD $ | \n\n> **货币与价格说明**：B端代币档位和礼包的价格以当地货币「分」为单位直接存储（`localPrice`、`localCurrency` 字段），C端直接使用该本地价格展示，无需在前端做汇率换算。汇率换算由B端在配置时完成。\n\n---\n\n### 3.3 代币充值模块\n\n| 需求编号 | 需求描述 | 优先级 |\n|---------|---------|-------|\n| F-TOKEN-01 | 以 2 列网格展示代币充值档位卡片，档位列表由B端代币配置接口下发，数量不固定 | P0 |\n| F-TOKEN-02 | 每张卡片展示：代币数量、赠送代币（有赠送时显示）、积分徽章、本地价格、货币单位 | P0 |\n| F-TOKEN-03 | B端配置「是否高亮」为开启的档位，使用高亮样式（黄色渐变背景）区分 | P1 |\n| F-TOKEN-04 | B端配置「是否展示HOT标签」为开启的档位，在卡片左上角显示红色\"HOT\"脉冲徽章 | P1 |\n| F-TOKEN-05 | 点击卡片选中（蓝色边框+浅蓝背景） | P0 |\n| F-TOKEN-06 | 选中档位后自动弹出订单确认抽屉 | P0 |\n| F-TOKEN-07 | 价格直接使用B端代币配置中对应地区-支付渠道的本地价格（`localPrice` / `localCurrency`），无需前端换算 | P0 |\n| F-TOKEN-08 | 积分数量由B端配置决定（`pointsAmount` 字段），C端直接展示 | P1 |\n| F-TOKEN-09 | 当前地区无对应代币配置时，回退展示 Others（默认）配置；若 Others 也无配置则隐藏代币 Tab | P1 |\n\n**代币档位数据来源**：B端「代币配置管理」→ 已审核通过（status=2）的记录，按当前地区（`region`）和已选支付渠道（`paymentChannel`）过滤展示。\n\n> 原型阶段使用前端 Mock 数据（6档），生产环境替换为接口 `/api/config/tiers?region=xx&siteId=xx`。\n\n---\n\n### 3.4 道具礼包模块\n\n| 需求编号 | 需求描述 | 优先级 |\n|---------|---------|-------|\n| F-GIFT-01 | 切换至\"道具礼包\"Tab，以纵列卡片展示礼包列表，礼包由B端礼包配置接口下发，数量不固定 | P0 |\n| F-GIFT-02 | 每张礼包卡片展示：礼包图片、礼包名称、物品列表（图标+名称+数量）、限购信息、打折前价格（删除线）、现价 | P0 |\n| F-GIFT-03 | 礼包名称和物品名称支持多语言显示（语言由当前地区对应的语言决定） | P1 |\n| F-GIFT-04 | 点击礼包卡片选中，自动弹出订单抽屉 | P0 |\n| F-GIFT-05 | 价格直接使用B端礼包配置中对应地区-支付渠道的本地价格（`localPrice`）和打折前价格（`discountLocalPrice`），无需前端换算 | P0 |\n| F-GIFT-06 | 积分数量直接使用B端礼包配置的 `pointsAmount` 字段展示 | P1 |\n| F-GIFT-07 | B端配置「是否高亮」为开启的礼包，使用高亮样式区分 | P1 |\n| F-GIFT-08 | 当前地区无对应礼包配置时，回退展示 Others（默认）配置；若无任何配置则隐藏道具礼包 Tab | P1 |\n| F-GIFT-09 | 限购规则（总计/按天/按周及次数）由B端礼包配置的 `limitType` 和 `limitCount` 字段决定 | P0 |\n\n**道具礼包数据来源**：B端「礼包配置管理」→ 已审核通过（giftStatus=2）且在活动时间范围内的记录，按当前地区（`region`）和已选支付渠道（`paymentChannel`）过滤展示。\n\n> 原型阶段使用前端 Mock 数据（3个礼包），生产环境替换为接口 `/api/config/gifts?region=xx&siteId=xx`。\n\n---\n\n### 3.5 订单结算模块\n\n| 需求编号 | 需求描述 | 优先级 |\n|---------|---------|-------|\n| F-ORDER-01 | 从底部弹起订单确认抽屉，支持顶部拖拽关闭 | P0 |\n| F-ORDER-02 | 抽屉展示：角色信息、商品信息（代币/礼包）、购买数量、支付方式、总金额 | P0 |\n| F-ORDER-03 | 代币充值时显示：代币数量、赠送代币、赠送积分 | P0 |\n| F-ORDER-04 | 礼包购买时显示：礼包名称、礼包内容、赠送积分 | P0 |\n| F-ORDER-05 | 购买数量支持通过 +/- 按钮调整，范围 1~999 | P1 |\n| F-ORDER-06 | 总金额 = 单价 × 购买数量（换算为当前地区货币） | P0 |\n| F-ORDER-07 | 支付方式列表由B端「支付渠道配置」下发，按当前地区（`region`）+档位过滤展示已启用的渠道，2×2 网格布局 | P0 |\n| F-ORDER-08 | 选中支付方式后\"立即支付\"按钮才可点击 | P0 |\n\n---\n\n### 3.6 帮助系统模块\n\n| 需求编号 | 需求描述 | 优先级 |\n|---------|---------|-------|\n| F-HELP-01 | 代币 Tab 右侧\"?\"按钮，点击弹出\"储值说明\"帮助弹窗 | P1 |\n| F-HELP-02 | 储值说明包含：什么是代币、如何充值、充值优惠、注意事项 4 个模块 | P1 |\n| F-HELP-03 | 角色验证卡片右侧\"?\"按钮，点击弹出\"如何获取角色 ID\"帮助弹窗 | P1 |\n| F-HELP-04 | 角色 ID 帮助包含：游戏内查看路径、角色 ID 位置说明、注意事项 | P1 |\n| F-HELP-05 | 帮助弹窗内容随当前语言动态切换 | P1 |\n\n---\n\n### 3.7 新手引导模块\n\n| 需求编号 | 需求描述 | 优先级 |\n|---------|---------|-------|\n| F-GUIDE-01 | 首次访问自动启动新手引导，通过 LocalStorage `hasSeenGuide` 判断 | P2 |\n| F-GUIDE-02 | 引导分 4 步：角色验证 → 选择礼包 → 选择支付方式 → 完成支付 | P2 |\n| F-GUIDE-03 | 每步高亮目标元素（蓝色边框脉冲动画），其余区域半透明遮罩 | P2 |\n| F-GUIDE-04 | 引导提示框展示步骤编号、标题、内容说明 | P2 |\n| F-GUIDE-05 | 提供\"跳过\"和\"下一步\"两个操作按钮 | P2 |\n| F-GUIDE-06 | 完成或跳过后将状态写入 LocalStorage | P2 |\n\n---\n\n### 3.8 辅助功能模块\n\n| 需求编号 | 需求描述 | 优先级 |\n|---------|---------|-------|\n| F-AUX-01 | Banner 区域展示活动图片（160px 高），内容由B端 Banner 配置接口按当前语言下发（含 Others 兜底），在活动时间范围内展示 | P1 |\n| F-AUX-02 | 通知栏：黄色背景 + 从右向左滚动的活动公告文字，内容由B端通知栏配置接口按当前语言下发（含 Others 兜底），悬停暂停；在活动时间范围内展示 | P2 |\n| F-AUX-03 | 客服悬浮按钮（右下角固定，脉冲动画），点击跳转客服链接；链接地址由B端站点配置的 `customerServiceUrl` 字段提供 | P1 |\n| F-AUX-04 | 顶栏\"📱\"按钮：引导用户添加到手机主屏幕 | P2 |\n| F-AUX-05 | 顶栏\"⭐\"按钮：提示用户收藏网页（Ctrl+D / Cmd+D） | P2 |\n| F-AUX-06 | 底部 Footer：社交媒体图标链接（新窗口打开），社交媒体和链接地址由配置表控制 | P2 |\n| F-AUX-07 | 底部 Footer：隐私协议、用户协议链接；联系邮箱；内容由B端站点配置的「页脚配置」按当前语言下发 | P1 |\n| F-AUX-08 | 页面顶栏 Logo（游戏图标）和标题由B端站点配置的「游戏Logo图」和「页签名」字段提供 | P1 |\n| F-AUX-09 | 帮助弹窗「储值说明」和「角色 ID 获取说明」的内容由B端站点配置的「代币充值说明」和「角色ID获取说明」素材配置字段提供，支持多语言 | P1 |\n\n---\n\n## 4. 业务流程\n\n### 4.1 主流程：代币充值\n\n```\n用户访问页面\n    │\n    ├── 首次访问？ ──是──► 新手引导（可跳过）\n    │\n    ▼\n选择地区（默认根据用户IP自动选中地区）\n    │\n    ▼\n输入角色 ID → 点击\"验证\"\n    │\n    ├── 验证失败 ──► 提示错误，可重新输入\n    │\n    └── 验证成功 ──► 展示角色信息（服务器 + 角色名）\n                         │\n                         ▼\n                 选择代币充值档位（卡片网格）\n                         │\n                         ▼\n                 弹出订单确认抽屉\n                         │\n                         ▼\n              （可选）调整购买数量 +/-\n                         │\n                         ▼\n                 选择支付方式（2×2 网格）\n                         │\n                         ▼\n              \"立即支付\"按钮激活 → 点击支付\n                         │\n                         ▼\n                   [对接支付 SDK]\n```\n\n### 4.2 分流程：道具礼包购买\n\n```\n在充值区域切换至\"道具礼包\" Tab\n    │\n    ▼\n展示礼包卡片列表（纵向）\n    │\n    ▼\n点击礼包卡片选中\n    │\n    ├── 未验证角色 ──► 提示验证角色 ID\n    │\n    └── 已验证 ──► 弹出订单抽屉（显示礼包名称和内容）\n                        │\n                        ▼\n                   选择支付方式 → 立即支付\n```\n\n### 4.3 地区切换流程\n\n```\n点击顶栏地区选择器\n    │\n    ▼\n展开分洲下拉菜单\n    │\n    ▼\n点击目标地区\n    │\n    ▼\n更新全局状态：\n  - currentRegion（地区代码）\n  - currentLang（语言代码）\n  - currentCurrency（货币代码）\n  - currentCurrencySymbol（货币符号）\n    │\n    ▼\n重新渲染档位卡片（价格换算）\n    │\n    ▼\n更新页面所有文案（多语言翻译）\n\n```\n\n---\n\n## 5. 数据模型\n\n### 5.1 用户状态（运行时 + LocalStorage）\n\n```typescript\ninterface UserState {\n  isLoggedIn: boolean;        // 登录状态\n  userRoleId: string;         // 角色 ID（LocalStorage: 'userRoleId'）\n  serverName: string;         // 服务器名称（LocalStorage: 'serverName'）\n  roleName: string;           // 角色名称（LocalStorage: 'roleName'）\n  hasSeenGuide: boolean;      // 是否已看过引导（LocalStorage: 'hasSeenGuide'）\n}\n```\n\n### 5.2 站点配置（由B端下发）\n\nC端在初始化时调用站点配置接口，获取当前站点的配置信息：\n\n```typescript\ninterface SiteConfigResponse {\n  siteId: number;\n  siteName: string;               // 站点名称\n  gameLogo: string;               // 游戏Logo图URL（顶栏展示）\n  pageTitle: string;              // 页签标题\n  loginTypes: string[];           // 登录方式：'roleId' | 'email'\n  regions: RegionConfig[];        // B端配置的支持地区列表\n  customerServiceUrl: string;     // 客服链接\n  footerConfigs: Record<string, string>; // 页脚内容（多语言）\n  materialConfigs: {\n    roleIdHelp: Record<string, string>;    // 角色ID获取说明（多语言富文本）\n    tokenRechargeHelp: Record<string, string>; // 代币充值说明（多语言富文本）\n  };\n  languageTranslations: {\n    tokenDescription: Record<string, string>;   // 红钻用途说明\n    tokenRechargeGuide: Record<string, string>;  // 如何储值\n    tokenUseGuide: Record<string, string>;        // 如何使用\n  };\n}\n\ninterface RegionConfig {\n  code: string;        // 地区代码（如 'US'）\n  name: string;        // 地区显示名称\n  language: string;    // 对应语言代码（如 'en'）\n  currency: string;    // 货币代码（如 'USD'）\n  symbol: string;      // 货币符号（如 '$'）\n  continent: string;   // 所属洲际（用于地区选择器分组）\n}\n```\n\n### 5.3 代币档位（由B端下发）\n\n代币档位数据由B端「代币配置管理」生成，C端通过接口按当前地区和支付渠道查询：\n\n```typescript\n// 接口返回的单条代币档位记录（对应B端 CoinConfig）\ninterface TierData {\n  id: number;\n  coinAmount: number;       // 代币数量\n  bonusAmount: number;      // 赠送代币数量（对应B端 bonusRatio 换算后）\n  localPrice: number;       // 本地价格（分，直接展示，B端已按地区配置）\n  localCurrency: string;    // 本地货币代码（如 'USD'）\n  pointsAmount: number;     // 赠送积分数量\n  isHighlight: boolean;     // 是否高亮显示（B端「是否高亮」开关）\n  isHot: boolean;           // 是否展示HOT标签（B端「是否展示HOT标签」开关）\n  region: string;           // 适用地区\n  paymentChannel: string;   // 适用支付渠道\n}\n```\n\n### 5.4 道具礼包（由B端下发）\n\n礼包数据由B端「礼包配置管理」生成，C端通过接口按当前地区和支付渠道查询：\n\n```typescript\n// 接口返回的单条礼包记录（对应B端 GiftConfig）\ninterface GiftPackageData {\n  id: number;\n  giftId: string;           // 礼包ID（对应B端充值项ID）\n  giftName: string;         // 礼包名称（多语言由B端多语言翻译体系管理）\n  giftImage: string;        // 礼包图片URL\n  content: string;          // 礼包内容描述字符串（格式：物品名(ID) x 数量, ...）\n  localPrice: number;       // 本地现价（分）\n  discountLocalPrice: number; // 打折前价格（分），用于展示划线价\n  localCurrency: string;    // 本地货币代码\n  pointsAmount: number;     // 赠送积分数量（B端配置）\n  isHighlight: boolean;     // 是否高亮（B端配置）\n  limitType: 'total' | 'daily' | 'weekly'; // 限购类型\n  limitCount: number;       // 限购次数\n  activityTime: string;     // 活动时间范围\n  region: string;           // 适用地区\n  paymentChannel: string;   // 适用支付渠道\n}\n```\n\n### 5.5 支付渠道（由B端下发）\n\n```typescript\n// 接口返回的支付渠道记录（对应B端 PaymentChannel 配置）\ninterface PaymentChannelData {\n  code: string;        // 渠道代码（如 'paypal'、'visa'）\n  name: string;        // 渠道显示名称\n  icon: string;        // 渠道图标URL\n  region: string;      // 适用地区\n  status: 'enabled' | 'disabled';\n}\n```\n\n### 5.6 订单状态（运行时）\n\n```typescript\ninterface OrderState {\n  selectedTierId: number | null;\n  selectedGiftPackageId: string | null;\n  selectedPaymentMethod: string | null;  // 由B端支付渠道配置决定可选项\n  currentLocalPrice: number;    // 当前单价（本地货币，分），来自B端配置\n  currentLocalCurrency: string; // 当前货币代码\n  currentTokens: number;\n  currentBonus: number;\n  currentPoints: number;\n  currentQuantity: number;      // 购买数量（1-99）\n}\n```\n\n### 5.7 多语言翻译 Key 列表\n\n| Key | 说明 |\n|-----|------|\n| headerTitle | 顶栏标题 |\n| tierTitle | 礼包区域标题 |\n| drawerTitle | 抽屉标题 |\n| labelTokens | 代币数量标签 |\n| labelBonus | 赠送代币标签 |\n| labelPoints | 赠送积分标签 |\n| labelQuantity | 购买数量标签 |\n| labelRoleInfo | 角色信息标签 |\n| paymentTitle | 支付方式标题 |\n| labelTotal | 总计标签 |\n| payBtn | 支付按钮文字 |\n| loginTitle | 验证弹窗标题 |\n| verifyBtn | 验证按钮文字 |\n| reenterBtn | 重新输入按钮文字 |\n| privacyPolicy | 隐私协议链接文字 |\n| termsOfService | 用户协议链接文字 |\n| contactEmail | 联系邮箱说明 |\n\n---\n\n## 6. 交互设计\n\n### 6.1 页面布局\n\n```\n┌─────────────────────────────┐  ← 固定顶栏（60px）\n│  🎮 官方充值中心  👤ID ⭐ 📱 🌐│\n├─────────────────────────────┤\n│         Banner 图片          │  ← 160px\n├─────────────────────────────┤\n│    📢 活动通知滚动条          │\n├─────────────────────────────┤\n│  角色验证卡片                 │\n│  [角色ID输入框] [验证]  [?]   │\n├─────────────────────────────┤\n│  [代币] [道具礼包]            │  ← Tab 切换\n│  ┌──────┐ ┌──────┐          │\n│  │档位1  │ │档位2  │          │  ← 2列网格\n│  └──────┘ └──────┘          │\n│  ┌──────┐ ┌──────┐          │\n│  │档位3  │ │档位4  │          │\n│  └──────┘ └──────┘          │\n│  ...                         │\n├─────────────────────────────┤\n│  底部 Footer（固定）          │  ← 固定底栏（~80px）\n│  [Twitter][FB][Discord]      │\n│  隐私协议  用户协议  邮箱      │\n└─────────────────────────────┘\n            │（选中档位后）\n            ▼\n┌─────────────────────────────┐  ← 底部抽屉（从下弹出）\n│  ═══ [✕]  订单确认           │\n│  角色信息：Server 1 - Player  │\n│  代币数量：980                │\n│  赠送代币：196                │\n│  购买数量：[-] 1 [+]         │\n│  ┌─────────┐ ┌─────────┐   │  ← 支付方式 2×2\n│  │Visa/Master│ │PayPal  │   │\n│  └─────────┘ └─────────┘   │\n│  ┌─────────┐ ┌─────────┐   │\n│  │Apple Pay│  │Google Pay│  │\n│  └─────────┘ └─────────┘   │\n│  总计：¥71.93                │\n│  [     立即支付     ]         │\n└─────────────────────────────┘\n```\n\n### 6.2 状态流转\n\n**档位卡片状态**：\n- 默认：灰色边框，白色背景\n- 悬停/按下：scale(0.98) 缩放反馈\n- 选中：蓝色边框（#1890ff），浅蓝背景（#f0f7ff）\n\n**支付选项状态**：\n- 默认：灰色边框\n- 选中：蓝色边框，浅蓝背景\n- 激活支付按钮：必须选中支付方式才能点击\n\n**角色验证状态**：\n- 未验证：显示输入框组\n- 已验证：隐藏输入框，展示服务器名+角色名+\"重新输入\"按钮\n\n### 6.3 动画规范\n\n| 元素 | 动画 | 时长 |\n|------|------|------|\n| 支付抽屉弹出/收起 | translateY 0→100% | 300ms ease |\n| 新手引导高亮 | 蓝色边框脉冲 | 2s infinite |\n| 新手引导提示框 | 淡入 + 向上滑动 | 300ms |\n| 客服悬浮按钮 | 阴影脉冲 | 2s infinite |\n| 通知栏滚动 | 从右向左 translateX | 20s linear infinite |\n\n### 6.4 反馈提示\n\n| 场景 | 提示类型 | 内容 |\n|------|---------|------|\n| 未验证直接选择档位 | alert / 焦点跳转 | 提示先验证角色 ID |\n| 角色 ID 不存在 | alert | 角色 ID 不存在，请检查 |\n| 支付成功 | alert | 充值成功提示 |\n| 收藏提示 | alert | 引导用户按 Ctrl+D |\n| 添加桌面 | alert | 引导浏览器添加到主屏幕 |\n\n---\n\n## 7. 非功能性需求\n\n### 7.1 性能需求\n\n| 指标 | 要求 |\n|------|------|\n| 首屏加载时间 | ≤ 3 秒（4G 网络） |\n| 页面交互响应 | ≤ 100ms |\n| 图片资源总大小 | ≤ 500KB |\n| HTML 文件大小 | ≤ 200KB |\n\n### 7.2 兼容性需求\n\n| 平台 | 要求 |\n|------|------|\n| iOS Safari | iOS 13+（iPhone 8 及以上） |\n| Android Chrome | Android 8+（Chrome 80+） |\n| 最大内容宽度 | 480px，居中展示 |\n| 屏幕最小宽度 | 320px |\n\n### 7.3 安全需求\n\n| 需求 | 说明 |\n|------|------|\n| 输入验证 | 角色 ID 输入需在前端做格式校验（防 XSS） |\n| HTTPS | 生产环境必须使用 HTTPS 协议 |\n| LocalStorage | 不存储敏感支付信息，仅存储角色 ID 和引导状态 |\n| 支付安全 | 支付行为必须跳转至第三方支付平台，不在前端处理支付凭证 |\n\n### 7.4 可用性需求\n\n| 需求 | 说明 |\n|------|------|\n| 字体最小尺寸 | 正文 ≥ 11px，按钮 ≥ 13px |\n| 点击区域最小尺寸 | ≥ 44×44px（遵循 iOS HIG） |\n| 颜色对比度 | 主要文字对比度 ≥ 4.5:1（WCAG AA） |\n| 无网络提示 | 网络断开时提示用户检查网络连接 |\n\n### 7.5 本地化需求\n\n| 需求 | 说明 |\n|------|------|\n| 货币显示 | 保留两位小数，使用当地货币符号前缀 |\n| 日期格式 | 暂无日期展示场景（以实际需求为准） |\n| 文字方向 | 当前支持语言均为 LTR，无需 RTL 支持 |\n| 汇率精度 | 当前为静态汇率，生产环境需对接实时汇率 API |\n\n---\n\n## 8. 技术架构\n\n### 8.1 整体架构\n\n```\n┌────────────────────────────────────────┐\n│              客户端（浏览器）             │\n│                                        │\n│  ┌──────────────────────────────────┐  │\n│  │   静态 HTML + CSS + JavaScript   │  │\n│  │                                  │  │\n│  │  ┌──────────┐  ┌──────────────┐  │  │\n│  │  │  UI 组件  │  │  状态管理    │  │  │\n│  │  │ (DOM 操作)│  │(全局变量)    │  │  │\n│  │  └──────────┘  └──────────────┘  │  │\n│  │                                  │  │\n│  │  ┌──────────┐  ┌──────────────┐  │  │\n│  │  │  多语言   │  │  LocalStorage│  │  │\n│  │  │ (翻译表)  │  │ (持久化状态) │  │  │\n│  │  └──────────┘  └──────────────┘  │  │\n│  └──────────────────────────────────┘  │\n└────────────────────────────────────────┘\n         │（生产环境对接）\n         ▼\n┌────────────────────┐   ┌─────────────────┐\n│    后端 API 服务     │   │  第三方支付 SDK  │\n│  - 角色验证接口      │   │  - PayPal SDK   │\n│  - 充值下单接口      │   │  - Stripe SDK   │\n│  - 订单查询接口      │   │  - Apple Pay    │\n│  - 汇率查询接口      │   │  - Google Pay   │\n└────────────────────┘   └─────────────────┘\n```\n\n### 8.2 前端技术栈\n\n| 技术 | 选型 | 说明 |\n|------|------|------|\n| HTML | HTML5 | 语义化标签，无框架依赖 |\n| CSS | 内联 CSS | 移动端优先，Flexbox + Grid 布局 |\n| JavaScript | 原生 ES6+ | 无框架，全局变量 + 事件驱动 |\n| 存储 | LocalStorage | 用户状态持久化 |\n| 部署 | 静态文件 | CDN 或 Web 服务器直接托管 |\n\n### 8.3 核心文件结构\n\n```\n项目根目录/\n├── Recharge_Client_Overseas_Mobile.html   # 主页面（完整版）\n├── Recharge_Client_Overseas_Mobile_New.html  # 重构版（进行中）\n├── gameicon.png                           # 游戏图标\n├── banner.jpg                             # Banner 图片\n├── haiwaidaibi.png                        # 代币图标\n├── libao.png                              # 礼包图标\n├── pm_gateway_amex_rupay_discover_diner.png  # Visa/Master 图标\n├── pm_paypal.png                          # PayPal 图标\n├── pm_applepay.png                        # Apple Pay 图标\n├── GooglePay.png                          # Google Pay 图标\n├── 客服 (2).png                           # 客服图标\n├── 推特.png                               # Twitter 图标\n├── Facebook.png                           # Facebook 图标\n└── discord.png                            # Discord 图标\n```\n\n### 8.4 关键函数清单\n\n| 函数名 | 职责 |\n|--------|------|\n| `renderTierCards()` | 渲染代币档位卡片（含价格换算） |\n| `renderGiftPackages()` | 渲染道具礼包列表（含价格换算） |\n| `selectTier(id)` | 选中档位，更新订单抽屉并弹出 |\n| `selectGiftPackage(id)` | 选中礼包，更新订单抽屉并弹出 |\n| `selectRegion(code, name, lang)` | 切换地区，更新货币、语言、价格 |\n| `updateLanguage(lang)` | 遍历翻译表，更新所有 DOM 文案 |\n| `verifyRole()` | 验证角色 ID，Mock 数据匹配 |\n| `selectPayment(method)` | 选中支付方式，激活支付按钮 |\n| `increaseQuantity()` | 增加购买数量，更新总价 |\n| `decreaseQuantity()` | 减少购买数量，更新总价 |\n| `handlePay()` | 处理支付（当前 Mock，生产对接 SDK） |\n| `showDrawer()` | 展示订单确认抽屉 |\n| `closeDrawer()` | 关闭订单确认抽屉 |\n| `startGuide()` | 启动新手引导 |\n| `switchRechargeTab(tab)` | 切换代币 / 道具礼包 Tab |\n| `logout()` | 清除登录状态 |\n\n### 8.5 状态管理规范\n\n页面使用全局 JavaScript 变量管理运行时状态：\n\n```javascript\n// 用户状态\nlet isLoggedIn = false;\nlet userRoleId = '';\nlet serverName = '';\nlet roleName = '';\n\n// 地区/语言状态\nlet currentRegion = 'cn';\nlet currentLang = 'zh-CN';\nlet currentCurrency = 'CNY';\nlet currentCurrencySymbol = '¥';\n\n// 订单状态\nlet selectedTierId = null;\nlet selectedGiftPackageId = null;\nlet selectedPaymentMethod = null;\nlet currentPrice = 0;\nlet currentTokens = 0;\nlet currentBonus = 0;\nlet currentPoints = 0;\nlet currentQuantity = 1;\n```\n\n### 8.6 后端 API 接口（规划）\n\nC端所有展示数据均来自B端配置管理系统，C端通过以下接口拉取配置数据并渲染：\n\n| 接口 | 方法 | 路径 | 说明 | B端配置来源 |\n|------|------|------|------|------------|\n| 获取站点配置 | GET | `/api/site/config?siteId=xx` | 获取站点基础配置：地区列表、登录方式、Logo、客服链接、帮助内容、页脚内容 | B端站点配置管理 |\n| 获取代币档位 | GET | `/api/config/tiers?siteId=xx&region=xx` | 按地区获取已审核通过的代币档位列表 | B端代币配置管理（status=2） |\n| 获取礼包列表 | GET | `/api/config/gifts?siteId=xx&region=xx` | 按地区获取已审核通过且在活动期内的礼包列表 | B端礼包配置管理（giftStatus=2） |\n| 获取支付渠道 | GET | `/api/config/payments?siteId=xx&region=xx` | 按地区获取已启用的支付渠道列表 | B端支付渠道配置（status=enabled） |\n| 获取Banner | GET | `/api/config/banners?siteId=xx&lang=xx` | 按语言获取当前生效的Banner | B端Banner配置（status=2，时间范围内） |\n| 获取通知栏 | GET | `/api/config/notifications?siteId=xx&lang=xx` | 按语言获取当前生效的通知内容 | B端通知栏配置（status=2，时间范围内） |\n| 角色验证 | POST | `/api/role/verify` | 验证角色 ID，返回角色和服务器信息 | - |\n| 创建订单 | POST | `/api/order/create` | 创建充值订单，返回支付跳转 URL | - |\n| 查询订单 | GET | `/api/order/{id}` | 查询订单支付状态 | - |\n\n### 8.7 已知技术债务\n\n| 问题 | 影响 | 建议方案 | 优先级 |\n|------|------|---------|-------|\n| 代币档位、礼包、支付方式硬编码在前端 | 无法响应B端运营配置，上线后档位调整需重新发版 | 对接B端配置接口（§8.6），数据完全由B端下发 | 高 |\n| 汇率前端换算（USD × rate） | 与B端本地价格体系不一致，可能造成展示价格误差 | 切换为直接使用B端 `localPrice` 字段，去除前端换算逻辑 | 高 |\n| 地区列表和语言映射硬编码 | 新增地区需改动前端代码 | 从B端站点配置接口动态获取地区列表 | 高 |\n| 支付方式未按地区过滤 | 展示当前地区不支持的支付方式 | 通过B端支付渠道接口按地区返回可用渠道 | 高 |\n| 数据全为 Mock | 无法真实充值 | 对接后端 API | 高 |\n| 支付仅模拟 | 无法完成真实支付 | 集成 PayPal/Stripe SDK | 高 |\n| 图片使用相对路径 | 部署后可能加载失败 | 改为 CDN 绝对路径（由B端站点配置提供） | 高 |\n| 客服链接、页脚内容硬编码 | 运营变更需发版 | 从B端站点配置接口获取 | 中 |\n| 帮助弹窗内容硬编码 | 内容更新需发版 | 从B端站点配置的素材配置字段获取 | 中 |\n| 无统一错误处理 | 用户体验差 | 添加全局错误拦截 | 中 |\n| 无防抖节流 | 频繁操作可能卡顿 | 关键操作添加防抖 | 中 |\n\n---\n\n---\n\n## 版本历史\n\n| 版本 | 日期 | 修改内容 |\n|------|------|---------|\n| v1.1 | 2026-04-01 | 补充C端与B端配置系统的联动关系：地区列表、代币档位、礼包、支付方式、Banner、通知栏、帮助内容、客服链接等均改为由B端下发，去除前端硬编码业务数据的表述；货币换算由前端乘汇率改为使用B端本地价格字段；更新数据模型和API接口规划 |\n| v1.0 | 2026-04-01 | 初始版本，基于 `Recharge_Client_Overseas_Mobile.html` 实现代码和 `memory_log_overseas.md` 整理生成 |\n"},
+        {label:"v1.0",date:"2026-03-01",content:"# PRD - 游戏充值中心（海外版移动端）\n\n**文档版本**：v1.0\n\n## 初始版本内容\n"}
+        ];
+        var prdCurrentVersion = 0;
+        var prdLoaded = false;
+
+        function openPrdPanel() {
+            document.getElementById('prdPanel').classList.add('show');
+            if (!prdLoaded) { loadPrdVersion(0); prdLoaded = true; }
+        }
+
+        function closePrdPanel() {
+            document.getElementById('prdPanel').classList.remove('show');
+        }
+
+        function switchPrdVersion(idx) {
+            if (idx === prdCurrentVersion) return;
+            prdCurrentVersion = idx;
+            var items = document.querySelectorAll('.prd-version-item');
+            items.forEach(function(el, i) {
+                el.classList.toggle('active', i === idx);
+            });
+            loadPrdVersion(idx);
+        }
+
+        function loadPrdVersion(idx) {
+            var md = prdVersions[idx].content;
+            document.getElementById('prdPanelBody').innerHTML = renderMarkdown(md);
+            document.getElementById('prdPanelBody').scrollTop = 0;
+            buildToc();
+        }
+
+        function buildToc() {
+            var body = document.getElementById('prdPanelBody');
+            var tocList = document.getElementById('prdTocList');
+            if (!body || !tocList) return;
+            var headings = body.querySelectorAll('h2, h3');
+            var items = [];
+            headings.forEach(function(h, i) {
+                var anchorId = 'prd-anchor-' + i;
+                h.id = anchorId;
+                var level = h.tagName.toLowerCase(); // h2 or h3
+                var safeText = escAttr(h.textContent); var displayText = escHtml(h.textContent); items.push('<li class="prd-toc-item toc-' + level + '" onclick="scrollToc(\'' + anchorId + '\')" title="' + safeText + '">' + displayText + '</li>');
+            });
+            tocList.innerHTML = items.join('');
+        }
+
+        function scrollToc(anchorId) {
+            var body = document.getElementById('prdPanelBody');
+            var target = document.getElementById(anchorId);
+            if (!body || !target) return;
+            // highlight active
+            document.querySelectorAll('.prd-toc-item').forEach(function(el) {
+                el.classList.remove('toc-active');
+            });
+            // find which li corresponds — match by onclick attribute
+            var allItems = document.querySelectorAll('.prd-toc-item');
+            allItems.forEach(function(el) {
+                if (el.getAttribute('onclick') === "scrollToc('" + anchorId + "')") {
+                    el.classList.add('toc-active');
+                }
+            });
+            var bodyRect = body.getBoundingClientRect();
+            var targetRect = target.getBoundingClientRect();
+            body.scrollTo({ top: body.scrollTop + targetRect.top - bodyRect.top - 16, behavior: 'smooth' });
+        }
+
+        function renderTable(head, rows) {
+            const ths = head.split('|').slice(1, -1).map(c => `<th>${escHtml(c.trim())}</th>`).join('');
+            const trs = rows.map(r =>
+                '<tr>' + r.split('|').slice(1, -1).map(c => `<td>${escHtml(c.trim())}</td>`).join('') + '</tr>'
+            ).join('');
+            return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+        }
+
+        function escHtml(s) {
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+        function escAttr(s) {
+            return escHtml(s).replace(/"/g,'&quot;');
+        }
+
+        function inlineFmt(s) {
+            s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+            s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            return s;
+        }
+
+        function renderMarkdown(md) {
+            const lines = md.split('\n');
+            const out = [];
+            let inCode = false, codeBuf = [], inTable = false, tableHead = '', tableRows = [];
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+
+                // code block
+                if (line.startsWith('```')) {
+                    if (inCode) {
+                        out.push(`<pre><code>${escHtml(codeBuf.join('\n'))}</code></pre>`);
+                        inCode = false; codeBuf = [];
+                    } else { inCode = true; }
+                    continue;
+                }
+                if (inCode) { codeBuf.push(line); continue; }
+
+                // table
+                if (line.trim().startsWith('|')) {
+                    if (!inTable) { inTable = true; tableHead = line; tableRows = []; }
+                    else if (/^[\s|:-]+$/.test(line)) { /* separator, skip */ }
+                    else tableRows.push(line);
+                    continue;
+                } else if (inTable) {
+                    out.push(renderTable(tableHead, tableRows));
+                    inTable = false; tableHead = ''; tableRows = [];
+                }
+
+                if (!line.trim()) { out.push(''); continue; }
+                if (line.startsWith('#### ')) { out.push(`<h4>${escHtml(line.slice(5))}</h4>`); continue; }
+                if (line.startsWith('### '))  { out.push(`<h3>${escHtml(line.slice(4))}</h3>`); continue; }
+                if (line.startsWith('## '))   { out.push(`<h2>${escHtml(line.slice(3))}</h2>`); continue; }
+                if (line.startsWith('# '))    { out.push(`<h1>${escHtml(line.slice(2))}</h1>`); continue; }
+                if (line.startsWith('---'))   { out.push('<hr>'); continue; }
+                if (line.startsWith('> '))    { out.push(`<blockquote>${escHtml(line.slice(2))}</blockquote>`); continue; }
+
+                // list
+                if (line.match(/^(\s*[-*]\s)/)) {
+                    const items = [];
+                    while (i < lines.length && lines[i].match(/^(\s*[-*]\s)/)) {
+                        items.push(`<li>${inlineFmt(escHtml(lines[i].replace(/^\s*[-*]\s/, '')))}</li>`);
+                        i++;
+                    }
+                    i--;
+                    out.push('<ul>' + items.join('') + '</ul>');
+                    continue;
+                }
+                if (line.match(/^\d+\.\s/)) {
+                    const items = [];
+                    while (i < lines.length && lines[i].match(/^\d+\.\s/)) {
+                        items.push(`<li>${inlineFmt(escHtml(lines[i].replace(/^\d+\.\s/, '')))}</li>`);
+                        i++;
+                    }
+                    i--;
+                    out.push('<ol>' + items.join('') + '</ol>');
+                    continue;
+                }
+
+                // paragraph with inline formatting
+                let p = escHtml(line);
+                p = inlineFmt(p);
+                out.push(`<p>${p}</p>`);
+            }
+
+            // flush pending table
+            if (inTable) out.push(renderTable(tableHead, tableRows));
+
+            return out.join('\n');
+        }
+    </script>
+</body>
+</html>
