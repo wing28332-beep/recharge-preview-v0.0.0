@@ -111,8 +111,10 @@
                 const now = Date.now();
                 function getBannerForLang(lang) {
                     const active = banners.filter(b => {
-                        if (!b.effectiveTime) return true;
-                        const [s, e] = b.effectiveTime.split('~').map(t => new Date(t.trim()).getTime());
+                        // B端Banner存startTime/endTime字段
+                        if (!b.startTime && !b.endTime) return true;
+                        const s = b.startTime ? new Date(b.startTime).getTime() : 0;
+                        const e = b.endTime ? new Date(b.endTime).getTime() : Infinity;
                         return now >= s && now <= e;
                     });
                     return active.find(b => b.language === lang)
@@ -139,8 +141,10 @@
                 const now = Date.now();
                 window.__applyNotice = function(lang) {
                     const active = notices.filter(n => {
-                        if (!n.effectiveTime) return true;
-                        const [s, e] = n.effectiveTime.split('~').map(t => new Date(t.trim()).getTime());
+                        // B端Notification存startTime/endTime，无effectiveTime字段
+                        if (!n.startTime && !n.endTime) return true;
+                        const s = n.startTime ? new Date(n.startTime).getTime() : 0;
+                        const e = n.endTime ? new Date(n.endTime).getTime() : Infinity;
                         return now >= s && now <= e;
                     });
                     const n = active.find(x => x.language === lang)
@@ -176,10 +180,12 @@
 
                 const sym = currencySymbols[tiersToShow[0].localCurrency] || tiersToShow[0].localCurrency || '$';
                 tierGrid.innerHTML = tiersToShow.map((c, idx) => {
-                    const price = c.localPrice ? (c.localPrice / 100).toFixed(2) : (c.amount / 100).toFixed(2);
-                    const bonusHtml = c.bonusAmount > 0 ? `
+                    const price = c.localPrice ? (c.localPrice / 100).toFixed(2) : (c.price / 100).toFixed(2);
+                    // B端字段: bonusCoin=赠送代币（不是bonusAmount）
+                    const bonusVal = c.bonusCoin || 0;
+                    const bonusHtml = bonusVal > 0 ? `
                         <div class="tier-bonus-section">
-                            <div class="tier-bonus-badge">+${c.bonusAmount}</div>
+                            <div class="tier-bonus-badge">+${bonusVal}</div>
                         </div>` : '';
                     const hotBadge = c.isHighlight ? `<div class="tier-hot-badge">HOT</div>` : '';
                     return `
@@ -211,9 +217,9 @@
                         document.querySelectorAll('.tier-card').forEach(function(e) { e.classList.remove('selected'); });
                         el.classList.add('selected');
                         selectedTierId = idx;
-                        currentPrice = c.localPrice ? c.localPrice / 100 : c.amount / 100;
+                        currentPrice = c.localPrice ? c.localPrice / 100 : c.price / 100;
                         currentTokens = c.coinAmount;
-                        currentBonus = c.bonusAmount || 0;
+                        currentBonus = c.bonusCoin || 0;
                         currentPoints = c.pointsAmount || 0;
                         selectedPaymentMethod = c.paymentChannel || null;
                         updateSummary();

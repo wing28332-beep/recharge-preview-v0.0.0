@@ -43,8 +43,10 @@
             if (bannerEl && banners.length > 0) {
                 const now = Date.now();
                 const activeBanners = banners.filter(b => {
-                    if (!b.effectiveTime) return true;
-                    const [s, e] = b.effectiveTime.split('~').map(t => new Date(t.trim()).getTime());
+                    // B端Banner存startTime/endTime（字符串），effectiveTime是数组
+                    if (!b.startTime && !b.endTime) return true;
+                    const s = b.startTime ? new Date(b.startTime).getTime() : 0;
+                    const e = b.endTime ? new Date(b.endTime).getTime() : Infinity;
                     return now >= s && now <= e;
                 });
                 if (activeBanners.length > 0) {
@@ -83,8 +85,10 @@
             if (noticeBar && notices.length > 0) {
                 const now = Date.now();
                 const activeNotice = notices.find(n => {
-                    if (!n.effectiveTime) return true;
-                    const [s, e] = n.effectiveTime.split('~').map(t => new Date(t.trim()).getTime());
+                    // B端Notification存startTime/endTime，无effectiveTime字段
+                    if (!n.startTime && !n.endTime) return true;
+                    const s = n.startTime ? new Date(n.startTime).getTime() : 0;
+                    const e = n.endTime ? new Date(n.endTime).getTime() : Infinity;
                     return now >= s && now <= e;
                 });
                 if (activeNotice) {
@@ -103,20 +107,20 @@
             // ── 代币档位 ──────────────────────────────────────
             const tierTab = document.getElementById('tier-tab');
             if (tierTab && coins.length > 0) {
-                // 区分固定档位和自定义档位
-                const fixedCoins = coins.filter(c => !c.coinType || c.coinType === 'fixed');
-                const customCoins = coins.filter(c => c.coinType === 'custom');
+                // B端字段: type='fixed'|'custom', price=价格(分), coinAmount=代币数, bonusCoin=赠送代币
+                const fixedCoins = coins.filter(c => !c.type || c.type === 'fixed');
+                const customCoins = coins.filter(c => c.type === 'custom');
 
                 if (fixedCoins.length > 0) {
                     const tierGrid = tierTab.querySelector('.tier-grid');
                     if (tierGrid) {
                         tierGrid.innerHTML = fixedCoins.map((c, idx) => {
-                            const price = (c.amount / 100).toFixed(0);
-                            const bonusHtml = c.bonusAmount > 0
-                                ? `<div class="tier-bonus-group"><span class="tier-plus">+</span><div class="tier-bonus-icon"><img src="daibi.png" alt="" class="tier-bonus-icon"></div><div class="tier-bonus">${c.bonusAmount}</div></div>`
+                            const price = (c.price / 100).toFixed(0);
+                            const bonusHtml = c.bonusCoin > 0
+                                ? `<div class="tier-bonus-group"><span class="tier-plus">+</span><div class="tier-bonus-icon"><img src="daibi.png" alt="" class="tier-bonus-icon"></div><div class="tier-bonus">${c.bonusCoin}</div></div>`
                                 : '';
-                            const pointsHtml = c.amount > 0
-                                ? `<div class="tier-points-top">赠送${c.amount}积分</div>`
+                            const pointsHtml = c.price > 0
+                                ? `<div class="tier-points-top">赠送${c.price}积分</div>`
                                 : '';
                             return `
                             <div class="tier-card" onclick="selectTierDynamic(${idx})">
@@ -144,8 +148,8 @@
                     event.currentTarget.classList.add('selected');
                     selectedType = 'tier';
                     selectedId = idx;
-                    const price = c.amount / 100;
-                    updateOrderSummary(`${c.coinAmount}代币`, price, c.coinAmount, c.bonusAmount || 0);
+                    const price = c.price / 100;
+                    updateOrderSummary(`${c.coinAmount}代币`, price, c.coinAmount, c.bonusCoin || 0);
                     showDrawer();
                 };
             }
