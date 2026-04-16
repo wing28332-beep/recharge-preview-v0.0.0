@@ -1,0 +1,2281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>游戏充值中心 - 国内版 PC</title>
+    <script>
+    (function() {
+        const p = new URLSearchParams(location.search);
+        const SITE = p.get('site') || '';
+
+        function ls(key) {
+            try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) { return []; }
+        }
+
+        const siteList = ls('site_config_data');
+        const siteInfo = siteList.find(s => s.name === SITE) || {};
+        const coins    = ls('coin_config_data').filter(c => c.siteName === SITE && c.status === 2);
+        const gifts    = ls('gift_config_data').filter(g => g.siteName === SITE && g.giftStatus === 2 && g.enabled !== false);
+        const banners  = ls('banner_config_data').filter(b => b.siteName === SITE && b.status === 2);
+        const notices  = ls('notification_config_data').filter(n => n.siteName === SITE && n.status === 2);
+
+        if (siteInfo.pageTitle) document.title = siteInfo.pageTitle + ' - PC';
+
+        document.addEventListener('DOMContentLoaded', function() {
+
+            // ── 站点Logo ──────────────────────────────────────
+            if (siteInfo.gameLogo) {
+                document.querySelectorAll('.game-icon').forEach(el => { el.src = siteInfo.gameLogo; });
+            }
+
+            // ── Banner ────────────────────────────────────────
+            const bannerEl = document.querySelector('.banner');
+            if (bannerEl && banners.length > 0) {
+                const now = Date.now();
+                const activeBanners = banners.filter(b => {
+                    if (!b.startTime && !b.endTime) return true;
+                    const s = b.startTime ? new Date(b.startTime).getTime() : 0;
+                    const e = b.endTime ? new Date(b.endTime).getTime() : Infinity;
+                    return now >= s && now <= e;
+                });
+                if (activeBanners.length > 0) {
+                    const imgs = activeBanners.map((b, i) => `
+                        <div class="banner-slide" style="display:${i===0?'block':'none'};width:100%;height:100%;position:absolute;top:0;left:0;">
+                            ${b.jumpUrl
+                                ? `<a href="${b.jumpUrl}" target="_blank"><img src="${b.bannerImage||'../images/banner.jpg'}" style="width:100%;height:100%;object-fit:cover;"></a>`
+                                : `<img src="${b.bannerImage||'../images/banner.jpg'}" style="width:100%;height:100%;object-fit:cover;">`}
+                        </div>`).join('');
+                    const dots = activeBanners.length > 1
+                        ? `<div class="banner-dots">${activeBanners.map((_,i) => `<div class="banner-dot ${i===0?'active':''}"></div>`).join('')}</div>`
+                        : '';
+                    bannerEl.style.position = 'relative';
+                    bannerEl.innerHTML = imgs + dots;
+                    if (activeBanners.length > 1) {
+                        let cur = 0;
+                        setInterval(() => {
+                            const slides = bannerEl.querySelectorAll('.banner-slide');
+                            const dotsEl = bannerEl.querySelectorAll('.banner-dot');
+                            slides[cur].style.display = 'none';
+                            dotsEl[cur] && dotsEl[cur].classList.remove('active');
+                            cur = (cur + 1) % slides.length;
+                            slides[cur].style.display = 'block';
+                            dotsEl[cur] && dotsEl[cur].classList.add('active');
+                        }, 3000);
+                    }
+                }
+            }
+
+            // ── 通知栏 ────────────────────────────────────────
+            const noticeBar = document.getElementById('noticeBar');
+            if (noticeBar && notices.length > 0) {
+                const now = Date.now();
+                const activeNotice = notices.find(n => {
+                    if (!n.startTime && !n.endTime) return true;
+                    const s = n.startTime ? new Date(n.startTime).getTime() : 0;
+                    const e = n.endTime ? new Date(n.endTime).getTime() : Infinity;
+                    return now >= s && now <= e;
+                });
+                if (activeNotice) {
+                    const linkHtml = (activeNotice.linkText && activeNotice.linkUrl)
+                        ? ` <a href="${activeNotice.linkUrl}" target="_blank" style="color:#fa8c16;text-decoration:underline;">${activeNotice.linkText}</a>`
+                        : '';
+                    noticeBar.querySelector('.notice-text').innerHTML = (activeNotice.content || '') + linkHtml;
+                }
+                // 无生效通知时，保持默认文案显示
+            }
+
+            // ── 代币档位 ──────────────────────────────────────
+            const tierGrid = document.querySelector('.tier-grid');
+            if (tierGrid && coins.length > 0) {
+                const fixedCoins = coins.filter(c => !c.type || c.type === 'fixed');
+                if (fixedCoins.length > 0) {
+                    const coinImg = siteInfo.coinImage || '../images/代币图片.png';
+                    const bonusImg = siteInfo.bonusCoinImage || '../images/赠送代币图片.png';
+                    window.__dynamicTiers = fixedCoins;
+                    tierGrid.innerHTML = fixedCoins.map((c, idx) => {
+                        const price = (c.price / 100).toFixed(0);
+                        const points = Math.round(c.price / 100 * 100);
+                        const itemImg = c.coinItemImage || '../images/充值项图片.png';
+                        const bonusHtml = c.bonusCoin > 0
+                            ? `<span class="tier-plus">+</span>
+                               <img src="${bonusImg}" alt="赠送" class="tier-coin-icon">
+                               <span class="tier-bonus">+${c.bonusCoin}</span>`
+                            : '';
+                        return `
+                        <div class="tier-card" onclick="selectTier(this, ${idx})">
+                            <div class="tier-points-top">赠送${points}积分</div>
+                            <div class="tier-item-img-wrap">
+                                <img src="${itemImg}" alt="充值项" class="tier-item-img">
+                            </div>
+                            <div class="tier-amount-row-new">
+                                <img src="${coinImg}" alt="代币" class="tier-coin-icon">
+                                <span class="tier-amount">${c.coinAmount}</span>
+                                ${bonusHtml}
+                            </div>
+                            <div class="tier-price-bottom">¥${price}</div>
+                        </div>`;
+                    }).join('');
+                }
+            }
+
+            // ── 礼包列表 ──────────────────────────────────────
+            const giftList = document.querySelector('.gift-list');
+            if (giftList && gifts.length > 0) {
+                window.__dynamicGifts = gifts;
+                giftList.innerHTML = gifts.map((g, idx) => {
+                    const points = Math.round(parseFloat(g.amount || 0) * 100);
+                    const descHtml = g.description
+                        ? `<div class="gift-bottom"><div class="gift-desc">${g.description}</div></div>`
+                        : '';
+                    return `
+                    <div class="gift-card" onclick="selectGift(this, ${idx})">
+                        <div class="gift-points-badge">赠送${points}积分</div>
+                        <div class="gift-main">
+                            <div class="gift-left">
+                                <img src="${g.giftImage || '../images/libao.png'}" alt="${g.giftName}">
+                            </div>
+                            <div class="gift-middle">
+                                <div class="gift-name">${g.giftName}</div>
+                                <div class="gift-price">¥${g.amount}</div>
+                                <div class="gift-limit">${g.content || ''}</div>
+                                <div class="gift-time">${g.activityTime || ''}</div>
+                            </div>
+                            <div class="gift-right-btn">
+                                <button class="buy-btn" onclick="event.stopPropagation();selectGift(document.querySelectorAll('.gift-card')[${idx}],${idx})">立即购买</button>
+                            </div>
+                        </div>
+                        ${descHtml}
+                    </div>`;
+                }).join('');
+            }
+
+        }); // end DOMContentLoaded
+
+    })();
+    </script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: var(--theme-page-bg, #f5f7fa);
+            min-height: 100vh;
+        }
+
+        /* ── 顶部导航 ─────────────────────────────── */
+        .header {
+            background: var(--theme-nav-bg, #ffffff);
+            padding: 0 40px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .game-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .add-to-home-btn {
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .user-dropdown {
+            display: none;
+            position: absolute;
+            top: 40px;
+            right: 0;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            min-width: 120px;
+            z-index: 200;
+        }
+
+        .user-dropdown.show { display: block; }
+
+        .dropdown-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .dropdown-item:hover { background: #f5f5f5; }
+
+        .login-btn {
+            padding: 7px 20px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .user-info {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #555;
+        }
+        .user-info.show { display: flex; }
+
+        /* ── 通知栏 ──────────────────────────────── */
+        .notice-bar {
+            background: var(--theme-notice-bg, #fff7e6);
+            padding: 8px 40px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #874d00;
+            border-bottom: 1px solid #ffe58f;
+        }
+
+        /* ── Banner ──────────────────────────────── */
+        .banner {
+            width: 100%;
+            height: 240px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .banner img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .banner-dots {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 6px;
+        }
+
+        .banner-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.4);
+            cursor: pointer;
+        }
+
+        .banner-dot.active { background: #fff; }
+
+        /* ── 主内容双栏 ──────────────────────────── */
+        .main-content {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 24px 40px;
+            display: flex;
+            gap: 24px;
+            align-items: flex-start;
+        }
+
+        /* 左栏：角色验证 */
+        .left-panel {
+            width: 300px;
+            flex-shrink: 0;
+        }
+
+        /* 右栏：充值 + 礼包 */
+        .right-panel {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* ── 卡片通用 ────────────────────────────── */
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        /* ── 角色验证 ────────────────────────────── */
+        .role-info {
+            background: var(--theme-auth-bg, #e6f7ff);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+
+        .role-info .card-title { border-color: rgba(0,0,0,0.06); }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 6px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-input:focus { border-color: #1890ff; }
+
+        .verify-btn {
+            width: 100%;
+            padding: 10px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        /* 已登录信息 */
+        .role-verified {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .role-id-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .role-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1890ff, #096dd9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+        }
+
+        .role-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .role-id-text {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .logout-btn {
+            width: 100%;
+            padding: 8px;
+            background: none;
+            border: 1px solid #ff4d4f;
+            color: #ff4d4f;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        /* ── Tab 切换 ────────────────────────────── */
+        .tab-nav {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            padding: 10px 24px;
+            border: none;
+            background: none;
+            font-size: 15px;
+            color: #666;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            color: #1890ff;
+            font-weight: 600;
+            border-bottom-color: #1890ff;
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* ── 代币档位（与移动端一致） ────────────────── */
+        .recharge-card {
+            background: var(--theme-recharge-bg, #ffffff);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+
+        .tier-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .tier-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px 8px 12px 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: white;
+        }
+        .tier-card:hover { border-color: #91d5ff; background: #f0f7ff; }
+        .tier-card.selected { border-color: #1890ff; background: #f0f7ff; }
+
+        .tier-points-top {
+            position: absolute;
+            top: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: #ff6b00;
+            background: white;
+            border: 1px solid #ff6b00;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-weight: 500;
+            white-space: nowrap;
+            z-index: 1;
+        }
+
+        .tier-content {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            width: 100%;
+        }
+
+        /* 充值项图片（上方大图） */
+        .tier-item-img-wrap {
+            width: 100%;
+            aspect-ratio: 4/3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 8px;
+        }
+        .tier-item-img { width: 75%; height: 75%; object-fit: contain; }
+
+        /* 代币数量行（图标+数量横排） */
+        .tier-amount-row-new {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        .tier-coin-icon { width: 20px; height: 20px; object-fit: contain; vertical-align: middle; }
+
+        .tier-amount {
+            font-size: 15px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .tier-plus {
+            font-size: 14px;
+            color: #999;
+            font-weight: normal;
+            flex-shrink: 0;
+        }
+
+        .tier-bonus {
+            font-size: 14px;
+            color: #fa8c16;
+            font-weight: 500;
+        }
+
+        .tier-price-bottom {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            text-align: center;
+        }
+
+        /* ── 礼包列表（与移动端一致） ────────────────── */
+        .gift-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .gift-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            background: white;
+        }
+        .gift-card:hover { border-color: #91d5ff; background: #fafeff; }
+        .gift-card.selected { border-color: #1890ff; background: #f0f7ff; }
+
+        .gift-points-badge {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            border: 1px solid #e0e0e0;
+            background: white;
+            color: #666;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+        }
+
+        .gift-main {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .gift-left {
+            width: 80px;
+            height: 80px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f5f5f5;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+        .gift-left img { width: 60px; height: 60px; object-fit: contain; }
+
+        .gift-middle {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .gift-name { font-size: 14px; font-weight: 600; color: #333; }
+        .gift-price { font-size: 18px; font-weight: bold; color: #333; }
+        .gift-limit { font-size: 11px; color: #666; }
+        .gift-time { font-size: 11px; color: #999; }
+
+        .gift-right-btn {
+            display: flex;
+            align-items: center;
+            padding-left: 12px;
+            flex-shrink: 0;
+        }
+
+        .buy-btn {
+            padding: 8px 16px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .gift-bottom {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .gift-desc { font-size: 11px; color: #666; line-height: 1.6; }
+
+        /* ── 支付弹窗（单步：订单信息 + 扫码，左右布局） ── */
+        /* ── 支付弹窗（上下布局） ───────────────────── */
+        .pay-modal-box {
+            background: var(--theme-drawer-bg, white);
+            border-radius: 16px;
+            width: 480px;
+            max-width: 96vw;
+            position: relative;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .pay-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 24px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .pay-modal-title { font-size: 17px; font-weight: 700; color: #1a1a1a; }
+
+        .pay-modal-body { padding: 20px 24px 24px; }
+
+        /* 角色信息 */
+        .role-info-bar {
+            background: #e6f7ff;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .role-info-bar-name { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 2px; }
+        .role-info-bar-server { font-size: 12px; color: #666; }
+        .re-verify-btn {
+            padding: 5px 10px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 12px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        /* 订单明细行 */
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        .summary-label { color: #666; }
+        .summary-value { color: #333; font-weight: 600; }
+
+        /* 购买数量 */
+        .quantity-control {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .quantity-label { font-size: 14px; color: #666; }
+        .quantity-selector { display: flex; align-items: center; gap: 12px; }
+        .quantity-btn {
+            width: 32px; height: 32px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            background: white; color: #333;
+            font-size: 18px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .quantity-btn:hover { border-color: #1890ff; color: #1890ff; }
+        .quantity-btn:disabled { background: #f5f5f5; color: #d9d9d9; cursor: not-allowed; border-color: #e0e0e0; }
+        .quantity-input {
+            width: 60px; height: 32px; text-align: center;
+            border: 1px solid #d9d9d9; border-radius: 4px;
+            font-size: 14px; font-weight: 600;
+        }
+        .quantity-input:focus { outline: none; border-color: #1890ff; }
+
+        /* 支付方式 */
+        .payment-method-label { display: block; margin-bottom: 10px; font-size: 14px; color: #666; }
+        .payment-options { display: flex; gap: 10px; margin-bottom: 0; }
+        .payment-option {
+            flex: 1; padding: 12px;
+            border: 2px solid #e0e0e0; border-radius: 8px;
+            cursor: pointer; text-align: center; font-size: 13px;
+            transition: all 0.2s;
+        }
+        .payment-option.selected {
+            border-color: #1890ff; background: #e6f7ff;
+            color: #1890ff; font-weight: 600;
+        }
+        .payment-icon { margin-bottom: 5px; }
+        .payment-icon img { width: 32px; height: 32px; object-fit: contain; }
+        .payment-icon .pay-emoji { font-size: 28px; line-height: 1; }
+
+        .summary-divider { height: 1px; background: #e0e0e0; margin: 14px 0; }
+
+        /* 应付金额 */
+        .summary-total {
+            display: flex; justify-content: space-between; align-items: baseline;
+            margin-bottom: 16px;
+        }
+        .total-label { font-size: 16px; font-weight: 600; color: #333; }
+        .total-value { color: #ff4d4f; font-size: 28px; font-weight: 700; }
+
+        /* 二维码区 */
+        .qr-section {
+            border-top: 1px solid #f0f0f0;
+            padding-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .qr-placeholder {
+            width: 160px; height: 160px;
+            background: #fafafa; border: 1px solid #e8e8e8; border-radius: 10px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: #ccc; font-size: 11px; gap: 4px;
+        }
+        .qr-placeholder .qr-big { font-size: 80px; line-height: 1; }
+
+        .qr-tip { font-size: 13px; color: #888; text-align: center; line-height: 1.7; }
+        .qr-expire { font-size: 12px; color: #fa8c16; text-align: center; }
+
+        .qr-done-btn {
+            width: 100%; padding: 12px;
+            background: #52c41a; color: white;
+            border: none; border-radius: 8px;
+            cursor: pointer; font-size: 14px; font-weight: 600;
+            transition: background 0.2s; margin-top: 4px;
+        }
+        .qr-done-btn:hover { background: #389e0d; }
+        .qr-cancel-link {
+            font-size: 13px; color: #aaa; cursor: pointer; text-align: center; width: 100%;
+        }
+        .qr-cancel-link:hover { color: #666; }
+
+        /* 支付结果覆盖层 */
+        .pay-result-overlay {
+            display: none; position: absolute; inset: 0;
+            background: white; border-radius: 16px;
+            flex-direction: column; align-items: center; justify-content: center;
+            gap: 12px; z-index: 5;
+        }
+        .pay-result-overlay.show { display: flex; }
+        .pay-result-icon { font-size: 60px; }
+        .pay-result-title { font-size: 22px; font-weight: 700; }
+        .pay-result-sub { font-size: 14px; color: #888; }
+        .pay-result-close {
+            margin-top: 8px; padding: 12px 40px;
+            background: #1890ff; color: white;
+            border: none; border-radius: 10px;
+            cursor: pointer; font-size: 15px; font-weight: 600;
+        }
+
+        /* ── 弹窗通用 ────────────────────────────── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 300;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.show { display: flex; }
+
+        /* 登录弹窗 z-index 最高，避免被其他弹窗遮挡 */
+        #loginModal { z-index: 500; }
+        #accountSelectModal { z-index: 510; }
+        #pcRoleSelectModal { z-index: 510; }
+        #payModal { z-index: 400; }
+
+        .modal-box {
+            background: var(--theme-modal-bg, white);
+            border-radius: 16px;
+            padding: 32px 36px;
+            width: 440px;
+            max-width: 96vw;
+            position: relative;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 14px;
+            right: 18px;
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: #999;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .modal-close:hover { color: #333; }
+
+        .modal-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 20px;
+        }
+
+        .login-tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 22px;
+        }
+
+        .login-tab {
+            padding: 8px 16px;
+            font-size: 14px;
+            color: #666;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .login-tab.active {
+            color: #1890ff;
+            font-weight: 600;
+            border-bottom-color: #1890ff;
+        }
+
+        .login-form-content { display: none; }
+        .login-form-content.active { display: block; }
+
+        .form-group-modal { margin-bottom: 16px; }
+
+        .form-label-modal {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 6px;
+        }
+
+        .form-input-modal {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-input-modal:focus { border-color: #1890ff; }
+
+        .send-code-btn {
+            white-space: nowrap;
+            padding: 10px 14px;
+            font-size: 12px;
+            background: #f5f5f5;
+            border: 1px solid #d9d9d9;
+            border-radius: 8px;
+            cursor: pointer;
+            color: #555;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .send-code-btn:hover:not(:disabled) { background: #e6f7ff; border-color: #91d5ff; color: #1890ff; }
+        .send-code-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .agreement-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            margin-bottom: 18px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .agreement-link {
+            color: #1890ff;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 12px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .submit-btn:hover { background: #096dd9; }
+
+
+        /* ── 页脚：充值说明（加高横向排版） ─────── */
+        .footer {
+            background: var(--theme-footer-bg, #ffffff);
+            border-top: 1px solid #f0f0f0;
+            margin-top: 20px;
+            padding: 40px;
+        }
+
+        .footer-inner {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            gap: 60px;
+        }
+
+        .footer-section {
+            flex: 1;
+        }
+
+        .footer-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #444;
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .footer-content p {
+            font-size: 13px;
+            color: #888;
+            line-height: 2;
+        }
+
+        .footer-highlight {
+            color: #1890ff;
+            font-weight: 600;
+        }
+
+        /* ── 主题颜色 CSS 变量 ───────────────────── */
+        :root {
+            --theme-page-bg:     #F5F7FA;
+            --theme-nav-bg:      #FFFFFF;
+            --theme-notice-bg:   #FFF7E6;
+            --theme-auth-bg:     #E6F7FF;
+            --theme-recharge-bg: #FFFFFF;
+            --theme-footer-bg:   #FFFFFF;
+            --theme-modal-bg:    #FFFFFF;
+            --theme-drawer-bg:   #FFFFFF;
+        }
+
+        /* ── 角色信息卡 ──────────────────────────────── */
+        .pc-role-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: var(--theme-auth-bg, #e6f7ff);
+            border-radius: 10px;
+            padding: 14px 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .pc-role-avatar { font-size: 32px; line-height: 1; }
+        .pc-role-detail { flex: 1; }
+        .pc-role-name { font-size: 16px; font-weight: 700; color: #1a1a1a; margin-bottom: 2px; }
+        .pc-role-server { font-size: 13px; color: #666; margin-bottom: 2px; }
+        .pc-role-points { font-size: 13px; color: #fa8c16; font-weight: 600; }
+        .pc-role-action-btn {
+            padding: 8px 18px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .pc-role-action-btn:hover { background: #096dd9; }
+
+        /* ── 角色选择弹窗内部 ────────────────────────── */
+        .pc-role-modal-body {
+            display: flex;
+            min-height: 280px;
+            border: 1px solid #f0f0f0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .pc-server-list {
+            width: 140px;
+            flex-shrink: 0;
+            border-right: 1px solid #f0f0f0;
+            overflow-y: auto;
+            max-height: 320px;
+        }
+        .pc-server-item {
+            padding: 11px 14px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #555;
+            border-left: 3px solid transparent;
+            transition: background 0.15s;
+        }
+        .pc-server-item:hover { background: #f5f5f5; }
+        .pc-server-item.active {
+            background: #e6f7ff;
+            border-left-color: #1890ff;
+            color: #1890ff;
+            font-weight: 600;
+        }
+        .pc-character-list {
+            flex: 1;
+            padding: 8px;
+            overflow-y: auto;
+            max-height: 320px;
+        }
+        .pc-character-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            transition: background 0.15s;
+        }
+        .pc-character-item:hover { background: #f5f5f5; }
+        .pc-character-item.selected { background: #e6f7ff; }
+        .pc-char-name { font-size: 14px; font-weight: 600; color: #333; }
+        .pc-char-level { font-size: 12px; color: #999; }
+
+        /* ── 账号选择列表 ────────────────────────────── */
+        .pc-account-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 14px;
+            border: 1px solid #e8e8e8;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 8px;
+            transition: all 0.15s;
+        }
+        .pc-account-item:hover { border-color: #1890ff; background: #f0f7ff; }
+        .pc-account-name { font-size: 14px; font-weight: 600; color: #333; }
+        .pc-account-id { font-size: 12px; color: #999; margin-top: 2px; }
+        .pc-account-arrow { color: #bbb; font-size: 16px; }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        if (typeof mermaid !== 'undefined') {
+          mermaid.initialize({ startOnLoad: false, theme: 'default',
+            flowchart: { curve: 'basis', padding: 12 },
+            themeVariables: { fontSize: '13px', primaryColor: '#ecf5ff', primaryBorderColor: '#409eff', lineColor: '#606266', secondaryColor: '#f5f7fa' }
+          });
+        }
+      });
+    </script>
+</head>
+<body>
+
+    <!-- 顶部导航 -->
+    <div class="header">
+        <div class="logo">
+            <img src="../images/gameicon.png" alt="游戏图标" class="game-icon">
+            <span>官方充值中心</span>
+        </div>
+        <div class="header-right">
+            <button class="add-to-home-btn" onclick="addToHomeScreen()" title="添加到桌面">📱</button>
+            <button class="login-btn" id="loginBtn" onclick="openLoginModal()">登录</button>
+            <div class="user-info" id="userInfo">
+                <div class="user-avatar" onclick="toggleUserDropdown()">👤</div>
+                <span id="headerRoleId" style="font-size:13px;color:rgba(255,255,255,0.85);"></span>
+                <div class="user-dropdown" id="userDropdown">
+                    <div class="dropdown-item" onclick="doLogout()">退出登录</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Banner -->
+    <div class="banner">
+        <img src="../images/banner.jpg" alt="充值活动">
+    </div>
+
+    <!-- 通知栏（banner下方，与移动端一致） -->
+    <div class="notice-bar" id="noticeBar">
+        <span>📢</span>
+        <span class="notice-text">充值活动进行中！首充双倍，限时优惠！</span>
+    </div>
+
+    <!-- 主内容（全宽单栏） -->
+    <div class="main-content" style="display:block;padding:24px 40px;max-width:1100px;margin:0 auto;">
+
+        <!-- 角色信息卡（登录后显示，Tab 切换上方） -->
+        <div class="pc-role-card" id="pcRoleCard" style="display:none;">
+            <div class="pc-role-avatar">👤</div>
+            <div class="pc-role-detail">
+                <div class="pc-role-name" id="pcRoleName">—</div>
+                <div class="pc-role-server" id="pcRoleServer">—</div>
+                <div class="pc-role-points" id="pcRolePoints">积分：—</div>
+            </div>
+            <button class="pc-role-action-btn" id="pcRoleActionBtn" onclick="pcRoleAction()">切换角色</button>
+        </div>
+
+        <!-- Tab 切换 -->
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="switchTab('coin', this)">代币充值</button>
+                <button class="tab-btn" onclick="switchTab('gift', this)">礼包活动</button>
+            </div>
+
+            <!-- 代币充值 Tab -->
+            <div class="tab-content active" id="tab-coin">
+                <div class="recharge-card">
+                    <div class="card-title">选择充值档位</div>
+                    <div class="tier-grid">
+                        <!-- 默认静态档位（B端无数据时显示） -->
+                        <div class="tier-card" onclick="selectTier(this)">
+                            <div class="tier-points-top">赠送600积分</div>
+                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-amount-row-new">
+                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <span class="tier-amount">100</span>
+                            </div>
+                            <div class="tier-price-bottom">¥6</div>
+                        </div>
+                        <div class="tier-card" onclick="selectTier(this)">
+                            <div class="tier-points-top">赠送3000积分</div>
+                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-amount-row-new">
+                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <span class="tier-amount">500</span>
+                            </div>
+                            <div class="tier-price-bottom">¥30</div>
+                        </div>
+                        <div class="tier-card" onclick="selectTier(this)">
+                            <div class="tier-points-top">赠送6000积分</div>
+                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-amount-row-new">
+                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <span class="tier-amount">1000</span>
+                                <span class="tier-plus">+</span>
+                                <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                                <span class="tier-bonus">+200</span>
+                            </div>
+                            <div class="tier-price-bottom">¥60</div>
+                        </div>
+                        <div class="tier-card" onclick="selectTier(this)">
+                            <div class="tier-points-top">赠送16800积分</div>
+                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-amount-row-new">
+                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <span class="tier-amount">3000</span>
+                                <span class="tier-plus">+</span>
+                                <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                                <span class="tier-bonus">+800</span>
+                            </div>
+                            <div class="tier-price-bottom">¥168</div>
+                        </div>
+                        <div class="tier-card" onclick="selectTier(this)">
+                            <div class="tier-points-top">赠送32800积分</div>
+                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-amount-row-new">
+                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <span class="tier-amount">6000</span>
+                                <span class="tier-plus">+</span>
+                                <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                                <span class="tier-bonus">+2000</span>
+                            </div>
+                            <div class="tier-price-bottom">¥328</div>
+                        </div>
+                        <div class="tier-card" onclick="selectTier(this)">
+                            <div class="tier-points-top">赠送49800积分</div>
+                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-amount-row-new">
+                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <span class="tier-amount">10000</span>
+                                <span class="tier-plus">+</span>
+                                <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                                <span class="tier-bonus">+5000</span>
+                            </div>
+                            <div class="tier-price-bottom">¥498</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 礼包活动 Tab -->
+            <div class="tab-content" id="tab-gift">
+                <div class="gift-list">
+                    <!-- 默认静态礼包（B端无数据时显示） -->
+                    <div class="gift-card" onclick="selectGift(this)">
+                        <div class="gift-points-badge">赠送3000积分</div>
+                        <div class="gift-main">
+                            <div class="gift-left">
+                                <img src="../images/libao.png" alt="新手礼包">
+                            </div>
+                            <div class="gift-middle">
+                                <div class="gift-name">新手礼包</div>
+                                <div class="gift-price">¥30</div>
+                                <div class="gift-limit">钻石×100 + 金币×1000 + 经验药水×5</div>
+                                <div class="gift-time">活动时间：长期有效</div>
+                            </div>
+                            <div class="gift-right-btn">
+                                <button class="buy-btn" onclick="event.stopPropagation();selectGift(this.closest('.gift-card'))">立即购买</button>
+                            </div>
+                        </div>
+                        <div class="gift-bottom">
+                            <div class="gift-desc">新手专属礼包，购买后道具将直接发放至邮箱，每个账号仅限购买一次</div>
+                        </div>
+                    </div>
+                    <div class="gift-card" onclick="selectGift(this)">
+                        <div class="gift-points-badge">赠送12800积分</div>
+                        <div class="gift-main">
+                            <div class="gift-left">
+                                <img src="../images/libao.png" alt="豪华礼包">
+                            </div>
+                            <div class="gift-middle">
+                                <div class="gift-name">豪华礼包</div>
+                                <div class="gift-price">¥128</div>
+                                <div class="gift-limit">钻石×500 + 金币×5000 + 强化石×20 + 宝箱钥匙×5</div>
+                                <div class="gift-time">活动时间：限时7天</div>
+                            </div>
+                            <div class="gift-right-btn">
+                                <button class="buy-btn" onclick="event.stopPropagation();selectGift(this.closest('.gift-card'))">立即购买</button>
+                            </div>
+                        </div>
+                        <div class="gift-bottom">
+                            <div class="gift-desc">豪华礼包内含丰富道具，限时特惠，每个账号每月限购一次</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+    </div><!-- end main-content -->
+
+    <!-- 登录弹窗 -->
+    <div class="modal-overlay" id="loginModal">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeLoginModal()">✕</button>
+            <div class="modal-title">登录</div>
+            <div class="login-tabs">
+                <div class="login-tab active" onclick="switchLoginTab('phone', this)">手机号登录</div>
+                <div class="login-tab" onclick="switchLoginTab('account', this)">账密登录</div>
+                <div class="login-tab" onclick="switchLoginTab('roleid', this)">角色ID验证</div>
+            </div>
+            <!-- 手机号登录 -->
+            <div class="login-form-content active" id="form-phone">
+                <div class="form-group-modal">
+                    <label class="form-label-modal">手机号</label>
+                    <input type="tel" id="phoneInputModal" class="form-input-modal" placeholder="请输入手机号" maxlength="11">
+                </div>
+                <div class="form-group-modal">
+                    <label class="form-label-modal">验证码</label>
+                    <div style="display:flex;gap:8px;">
+                        <input type="text" id="codeInputModal" class="form-input-modal" placeholder="请输入验证码" style="flex:1;">
+                        <button class="send-code-btn" id="sendCodeModalBtn" onclick="sendCodeModal()">发送验证码</button>
+                    </div>
+                </div>
+                <div class="agreement-row">
+                    <input type="checkbox" id="agreePhone" style="margin-top:2px;flex-shrink:0;">
+                    <span>我已阅读并同意 <a class="agreement-link">《用户协议》</a>、<a class="agreement-link">《隐私政策》</a></span>
+                </div>
+                <button class="submit-btn" onclick="handlePhoneLogin()">验证登录</button>
+            </div>
+            <!-- 账密登录 -->
+            <div class="login-form-content" id="form-account">
+                <div class="form-group-modal">
+                    <label class="form-label-modal">账号</label>
+                    <input type="text" id="accountInputModal" class="form-input-modal" placeholder="请输入账号">
+                </div>
+                <div class="form-group-modal">
+                    <label class="form-label-modal">密码</label>
+                    <input type="password" id="passwordInputModal" class="form-input-modal" placeholder="请输入密码">
+                </div>
+                <div class="agreement-row">
+                    <input type="checkbox" id="agreeAccount" style="margin-top:2px;flex-shrink:0;">
+                    <span>我已阅读并同意 <a class="agreement-link">《用户协议》</a>、<a class="agreement-link">《隐私政策》</a></span>
+                </div>
+                <button class="submit-btn" onclick="handleAccountLogin()">登录</button>
+            </div>
+            <!-- 角色ID验证 -->
+            <div class="login-form-content" id="form-roleid">
+                <div class="form-group-modal">
+                    <label class="form-label-modal">角色ID</label>
+                    <input type="text" id="roleIdInputModal" class="form-input-modal" placeholder="请输入游戏角色ID">
+                </div>
+                <div class="agreement-row">
+                    <input type="checkbox" id="agreeRoleid" style="margin-top:2px;flex-shrink:0;">
+                    <span>我已阅读并同意 <a class="agreement-link">《用户协议》</a>、<a class="agreement-link">《隐私政策》</a></span>
+                </div>
+                <button class="submit-btn" onclick="handleRoleIdLogin()">验证登录</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 账号选择弹窗 -->
+    <div class="modal-overlay" id="accountSelectModal">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeAccountSelectModal()">✕</button>
+            <div class="modal-title">选择账号</div>
+            <div id="pcAccountList"></div>
+        </div>
+    </div>
+
+    <!-- 角色选择弹窗（PC端弹窗形式） -->
+    <div class="modal-overlay" id="pcRoleSelectModal">
+        <div class="modal-box" style="width:520px;max-width:96vw;">
+            <button class="modal-close" onclick="closePcRoleModal()">✕</button>
+            <div class="modal-title">选择角色</div>
+            <div class="pc-role-modal-body">
+                <div class="pc-server-list" id="pcServerList"></div>
+                <div class="pc-character-list" id="pcCharacterList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 支付弹窗（上下布局，与移动端内容一致） -->
+    <div class="modal-overlay" id="payModal">
+        <div class="pay-modal-box">
+            <!-- 支付结果覆盖层 -->
+            <div class="pay-result-overlay" id="payResultOverlay">
+                <div class="pay-result-icon" id="payResultIcon">✅</div>
+                <div class="pay-result-title" id="payResultTitle">支付成功！</div>
+                <div class="pay-result-sub" id="payResultSub">代币将在5分钟内到账，感谢您的充值</div>
+                <button class="pay-result-close" onclick="closePayModal()">完成</button>
+            </div>
+
+            <!-- 弹窗头部 -->
+            <div class="pay-modal-header">
+                <div class="pay-modal-title">订单确认</div>
+                <button class="modal-close" onclick="closePayModal()">✕</button>
+            </div>
+
+            <!-- 弹窗主体（上下布局） -->
+            <div class="pay-modal-body">
+
+                <!-- 角色信息（登录后显示） -->
+                <div class="role-info-bar" id="pmRoleInfo" style="display:none;">
+                    <div>
+                        <div class="role-info-bar-name" id="pmRoleName">—</div>
+                        <div class="role-info-bar-server" id="pmRoleServer"></div>
+                    </div>
+                    <button class="re-verify-btn" onclick="closePayModal();openLoginModal()">重新验证</button>
+                </div>
+
+                <!-- 代币字段（代币档位模式） -->
+                <div class="summary-item" id="pmTierFields">
+                    <span class="summary-label">代币数量</span>
+                    <span class="summary-value" id="pmTokenAmount">0</span>
+                </div>
+                <div class="summary-item" id="pmBonusFields">
+                    <span class="summary-label">赠送代币</span>
+                    <span class="summary-value" id="pmBonusAmount" style="color:#52c41a;">0</span>
+                </div>
+                <!-- 礼包字段（礼包模式） -->
+                <div class="summary-item" id="pmGiftNameField" style="display:none;">
+                    <span class="summary-label">礼包名称</span>
+                    <span class="summary-value" id="pmGiftName">—</span>
+                </div>
+                <div class="summary-item" id="pmGiftContentField" style="display:none;">
+                    <span class="summary-label">礼包内容</span>
+                    <span class="summary-value" id="pmGiftContent" style="font-size:12px;line-height:1.6;">—</span>
+                </div>
+                <!-- 赠送积分（两种模式都显示） -->
+                <div class="summary-item" id="pmPointsFields">
+                    <span class="summary-label">赠送积分</span>
+                    <span class="summary-value" id="pmPointsAmount" style="color:#ff6b00;">0</span>
+                </div>
+
+                <!-- 购买数量 -->
+                <div class="quantity-control">
+                    <span class="quantity-label">购买数量</span>
+                    <div class="quantity-selector">
+                        <button class="quantity-btn" id="pmDecBtn" onclick="pmDecQty()">-</button>
+                        <input type="number" class="quantity-input" id="pmQtyInput" value="1" min="1" max="99" onchange="pmUpdateQty()">
+                        <button class="quantity-btn" id="pmIncBtn" onclick="pmIncQty()">+</button>
+                    </div>
+                </div>
+
+                <!-- 支付方式 -->
+                <div style="margin-bottom:0;">
+                    <div class="payment-method-label">支付方式</div>
+                    <div class="payment-options">
+                        <div class="payment-option selected" id="pmOptWechat" onclick="pmSelectMethod('wechat')">
+                            <div class="payment-icon">
+                                <img src="微信支付.png" alt="微信" style="width:32px;height:32px;" onerror="this.style.display='none';this.nextSibling.style.display='block'">
+                                <div class="pay-emoji" style="display:none;">💚</div>
+                            </div>
+                            <div>微信支付</div>
+                        </div>
+                        <div class="payment-option" id="pmOptAlipay" onclick="pmSelectMethod('alipay')">
+                            <div class="payment-icon">
+                                <img src="支付宝支付.png" alt="支付宝" style="width:32px;height:32px;" onerror="this.style.display='none';this.nextSibling.style.display='block'">
+                                <div class="pay-emoji" style="display:none;">🔵</div>
+                            </div>
+                            <div>支付宝</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="summary-divider"></div>
+
+                <!-- 应付金额 -->
+                <div class="summary-total">
+                    <span class="total-label">应付金额</span>
+                    <span class="total-value" id="pmTotalPrice">¥0</span>
+                </div>
+
+                <!-- 二维码扫码区（上下布局） -->
+                <div class="qr-section">
+                    <div class="qr-placeholder">
+                        <div class="qr-big">▦</div>
+                        <div>扫码支付</div>
+                    </div>
+                    <div class="qr-tip">请打开手机 <strong id="pmMethodName2">微信</strong> 扫描上方二维码完成支付</div>
+                    <div class="qr-expire">有效期：<span id="pmCountdown">300</span> 秒</div>
+                    <button class="qr-done-btn" onclick="pmVerifyPayment()">我已完成支付</button>
+                    <div class="qr-cancel-link" onclick="closePayModal()">取消支付</div>
+                </div>
+
+            </div><!-- end pay-modal-body -->
+        </div>
+    </div>
+
+    <!-- 页脚：充值说明 -->
+    <div class="footer">
+        <div class="footer-inner">
+            <div class="footer-section">
+                <div class="footer-title">💳 充值到账说明</div>
+                <div class="footer-content">
+                    <p>• 充值成功后，代币将<span class="footer-highlight">立即到账</span>至您的游戏账户</p>
+                    <p>• 如遇特殊情况延迟，一般会在<span class="footer-highlight">5-10分钟</span>内到账</p>
+                    <p>• 充值过程中请勿关闭页面，以免造成订单异常</p>
+                </div>
+            </div>
+            <div class="footer-section">
+                <div class="footer-title">🛡️ 售后服务</div>
+                <div class="footer-content">
+                    <p>• 如充值后<span class="footer-highlight">30分钟</span>仍未到账，请联系客服处理</p>
+                    <p>• 客服工作时间：<span class="footer-highlight">9:00-22:00</span>（全年无休）</p>
+                    <p>• 充值记录可在"充值记录"中查看，保留180天</p>
+                </div>
+            </div>
+            <div class="footer-section">
+                <div class="footer-title">⚠️ 温馨提示</div>
+                <div class="footer-content">
+                    <p>• 请确认充值角色和区服信息，充值后<span class="footer-highlight">不支持退款</span></p>
+                    <p>• 未成年人充值需经监护人同意，理性消费</p>
+                    <p>• 请通过官方渠道充值，谨防诈骗</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var currentRoleId = null;
+
+        function addToHomeScreen() { alert('请使用浏览器菜单将本页面添加到书签或桌面。'); }
+
+        // ── 用户头像下拉 ──────────────────────────────────────
+        function toggleUserDropdown() {
+            document.getElementById('userDropdown').classList.toggle('show');
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.user-avatar') && !e.target.closest('.user-dropdown')) {
+                var dd = document.getElementById('userDropdown');
+                if (dd) dd.classList.remove('show');
+            }
+            // 点击 modal-overlay 背景关闭弹窗（登录弹窗除外，避免误触）
+            if (e.target.classList.contains('modal-overlay') && e.target.id !== 'loginModal') {
+                e.target.classList.remove('show');
+            }
+        });
+
+        // ── Tab 切换 ──────────────────────────────────────────
+        function switchTab(tab, btn) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('tab-' + tab).classList.add('active');
+        }
+
+        // ── 登录弹窗 ──────────────────────────────────────────
+        function openLoginModal() {
+            document.getElementById('loginModal').classList.add('show');
+        }
+
+        function closeLoginModal() {
+            document.getElementById('loginModal').classList.remove('show');
+        }
+
+        function switchLoginTab(type, el) {
+            document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.login-form-content').forEach(f => f.classList.remove('active'));
+            el.classList.add('active');
+            document.getElementById('form-' + type).classList.add('active');
+        }
+
+        // ── 验证码倒计时 ──────────────────────────────────────
+        function sendCodeModal() {
+            var btn = document.getElementById('sendCodeModalBtn');
+            if (btn.disabled) return;
+            var phone = document.getElementById('phoneInputModal').value.trim();
+            if (!phone) { alert('请先输入手机号'); return; }
+            btn.disabled = true;
+            var count = 60;
+            btn.textContent = count + 's';
+            var timer = setInterval(function() {
+                count--;
+                if (count <= 0) {
+                    clearInterval(timer);
+                    btn.disabled = false;
+                    btn.textContent = '发送验证码';
+                } else {
+                    btn.textContent = count + 's';
+                }
+            }, 1000);
+        }
+
+        // ── Mock 数据（与移动端对齐） ─────────────────────────
+        var serverCharacters = {
+            1: [{id:1, name:'剑圣', level:85}, {id:2, name:'圣骑士', level:72}, {id:3, name:'猎人', level:68}],
+            2: [{id:4, name:'法师', level:80}, {id:5, name:'牧师', level:75}],
+            3: [{id:6, name:'战士', level:90}, {id:7, name:'盗贼', level:65}, {id:8, name:'德鲁伊', level:70}],
+            4: [{id:9, name:'萨满', level:78}]
+        };
+        var mockRoles = {
+            '10001': {server:'一区-艾泽拉斯', name:'剑圣', level:85, points:12580},
+            '10002': {server:'二区-洛丹伦', name:'法师', level:80, points:8420},
+            '10003': {server:'三区-暴风城', name:'战士', level:90, points:21000}
+        };
+        var mockAccounts = [
+            {id:'account001', name:'游戏账号001'},
+            {id:'account002', name:'游戏账号002'},
+            {id:'account003', name:'游戏账号003'}
+        ];
+        var serverMeta = [
+            {id:1, name:'一区-艾泽拉斯'},
+            {id:2, name:'二区-洛丹伦'},
+            {id:3, name:'三区-暴风城'},
+            {id:4, name:'四区-铁炉堡'}
+        ];
+        var pcCurrentServerId = 1;
+        var pcCurrentServerName = '一区-艾泽拉斯';
+        var loginMethod = null; // 'phone' | 'account' | 'roleid'
+        var currentRoleName = '';
+        var currentRoleServer = '';
+
+        // ── 手机号登录 ────────────────────────────────────────
+        function handlePhoneLogin() {
+            var phone = document.getElementById('phoneInputModal').value.trim();
+            var code  = document.getElementById('codeInputModal').value.trim();
+            if (!phone) { alert('请输入手机号'); return; }
+            if (!code)  { alert('请输入验证码（测试：123456）'); return; }
+            if (code !== '123456') { alert('验证码错误！（测试验证码：123456）'); return; }
+            loginMethod = 'phone';
+            closeLoginModal();
+            showAccountSelectModal();
+        }
+
+        // ── 账密登录 ──────────────────────────────────────────
+        function handleAccountLogin() {
+            var acc = document.getElementById('accountInputModal').value.trim();
+            var pwd = document.getElementById('passwordInputModal').value.trim();
+            if (!acc) { alert('请输入账号'); return; }
+            if (!pwd) { alert('请输入密码'); return; }
+            if (acc !== 'test' || pwd !== '123456') {
+                alert('账号或密码错误！（测试账号：test，密码：123456）');
+                return;
+            }
+            loginMethod = 'account';
+            closeLoginModal();
+            showPcRoleModal();
+        }
+
+        // ── 角色ID验证 ────────────────────────────────────────
+        function handleRoleIdLogin() {
+            var roleId = document.getElementById('roleIdInputModal').value.trim();
+            if (!roleId) { alert('请输入角色ID'); return; }
+            var roleData = mockRoles[roleId];
+            if (!roleData) {
+                alert('角色ID不存在！（测试角色ID：10001、10002、10003）');
+                return;
+            }
+            loginMethod = 'roleid';
+            closeLoginModal();
+            afterSelectRole(roleData.name, roleData.server, roleData.points);
+        }
+
+        // ── 账号选择弹窗 ──────────────────────────────────────
+        function showAccountSelectModal() {
+            var list = document.getElementById('pcAccountList');
+            list.innerHTML = mockAccounts.map(function(a) {
+                return '<div class="pc-account-item" onclick="pcSelectAccount(\'' + a.id + '\',\'' + a.name + '\')">'
+                    + '<div><div class="pc-account-name">' + a.name + '</div>'
+                    + '<div class="pc-account-id">账号ID：' + a.id + '</div></div>'
+                    + '<div class="pc-account-arrow">›</div></div>';
+            }).join('');
+            document.getElementById('accountSelectModal').classList.add('show');
+        }
+
+        function closeAccountSelectModal() {
+            document.getElementById('accountSelectModal').classList.remove('show');
+        }
+
+        function pcSelectAccount(id, name) {
+            closeAccountSelectModal();
+            showPcRoleModal();
+        }
+
+        // ── 角色选择弹窗 ──────────────────────────────────────
+        function showPcRoleModal() {
+            // 渲染服务器列表
+            var sl = document.getElementById('pcServerList');
+            sl.innerHTML = serverMeta.map(function(s) {
+                return '<div class="pc-server-item' + (s.id === pcCurrentServerId ? ' active' : '')
+                    + '" onclick="pcSelectServer(' + s.id + ',\'' + s.name + '\')">' + s.name + '</div>';
+            }).join('');
+            pcRenderCharacters(pcCurrentServerId);
+            document.getElementById('pcRoleSelectModal').classList.add('show');
+        }
+
+        function closePcRoleModal() {
+            document.getElementById('pcRoleSelectModal').classList.remove('show');
+        }
+
+        function pcSelectServer(id, name) {
+            pcCurrentServerId = id;
+            pcCurrentServerName = name;
+            document.querySelectorAll('.pc-server-item').forEach(function(el) {
+                el.classList.toggle('active', el.textContent === name);
+            });
+            pcRenderCharacters(id);
+        }
+
+        function pcRenderCharacters(serverId) {
+            var chars = serverCharacters[serverId] || [];
+            var cl = document.getElementById('pcCharacterList');
+            cl.innerHTML = chars.map(function(c) {
+                return '<div class="pc-character-item" onclick="pcSelectCharacter(' + c.id + ',\'' + c.name + '\',\'' + pcCurrentServerName + '\',' + c.level + ')">'
+                    + '<div class="pc-char-name">' + c.name + '</div>'
+                    + '<div class="pc-char-level">等级 ' + c.level + '</div></div>';
+            }).join('');
+        }
+
+        function pcSelectCharacter(id, name, server, level) {
+            closePcRoleModal();
+            // 积分用等级简单模拟
+            afterSelectRole(name, server, level * 150);
+        }
+
+        // ── 登录成功统一入口 ──────────────────────────────────
+        function afterSelectRole(name, server, points) {
+            currentRoleId   = 1;
+            currentRoleName  = name;
+            currentRoleServer = server;
+
+            // 导航栏
+            document.getElementById('userInfo').classList.add('show');
+            document.getElementById('loginBtn').style.display = 'none';
+            var hrid = document.getElementById('headerRoleId');
+            if (hrid) hrid.textContent = name;
+
+            // 角色信息卡
+            document.getElementById('pcRoleName').textContent   = name;
+            document.getElementById('pcRoleServer').textContent = server;
+            document.getElementById('pcRolePoints').textContent = '积分：' + (points || 0).toLocaleString();
+            document.getElementById('pcRoleCard').style.display = 'flex';
+
+            // 更新操作按钮和下拉菜单
+            updatePcLoginUI();
+        }
+
+        function updatePcLoginUI() {
+            var actionBtn = document.getElementById('pcRoleActionBtn');
+            var dropdown  = document.getElementById('userDropdown');
+
+            if (loginMethod === 'roleid') {
+                actionBtn.textContent = '重新验证';
+                dropdown.innerHTML = '<div class="dropdown-item" onclick="doLogout()">退出登录</div>';
+            } else {
+                actionBtn.textContent = '切换角色';
+                dropdown.innerHTML =
+                    '<div class="dropdown-item" onclick="pcSwitchAccount()">切换账号</div>'
+                    + '<div class="dropdown-item" onclick="doLogout()">退出登录</div>';
+            }
+        }
+
+        function pcRoleAction() {
+            if (loginMethod === 'roleid') {
+                // 重新打开登录弹窗并定位到角色ID tab
+                openLoginModal();
+                var tab = document.querySelector('.login-tab:nth-child(3)');
+                if (tab) switchLoginTab('roleid', tab);
+            } else {
+                showPcRoleModal();
+            }
+        }
+
+        function pcSwitchAccount() {
+            document.getElementById('userDropdown').classList.remove('show');
+            openLoginModal();
+            // 定位到对应 tab
+            var tabIndex = loginMethod === 'phone' ? 1 : 2;
+            var tab = document.querySelector('.login-tab:nth-child(' + tabIndex + ')');
+            var type = loginMethod === 'phone' ? 'phone' : 'account';
+            if (tab) switchLoginTab(type, tab);
+        }
+
+        function doLogout() {
+            currentRoleId    = null;
+            currentRoleName  = '';
+            currentRoleServer = '';
+            loginMethod      = null;
+            document.getElementById('userInfo').classList.remove('show');
+            document.getElementById('loginBtn').style.display = '';
+            document.getElementById('pcRoleCard').style.display = 'none';
+            var dd = document.getElementById('userDropdown');
+            if (dd) dd.classList.remove('show');
+            // 重置下拉为默认
+            dd.innerHTML = '<div class="dropdown-item" onclick="doLogout()">退出登录</div>';
+        }
+
+        // ── 支付弹窗 ──────────────────────────────────────────
+        var _pmQty = 1;
+        var _pmBasePrice = 0;   // 单价（分）
+        var _pmBasePoints = 0;  // 单价对应积分
+        var _pmTimer = null;
+
+        function openOrderDrawer(type, data) {
+            _pmQty = 1;
+            _pmBasePrice = 0;
+            _pmBasePoints = 0;
+            document.getElementById('pmQtyInput').value = 1;
+            document.getElementById('pmDecBtn').disabled = true;
+            document.getElementById('pmIncBtn').disabled = false;
+
+            // 重置结果覆盖层
+            document.getElementById('payResultOverlay').classList.remove('show');
+
+            // 角色信息
+            var roleBar = document.getElementById('pmRoleInfo');
+            if (currentRoleId) {
+                roleBar.style.display = 'flex';
+                document.getElementById('pmRoleName').textContent   = currentRoleName || currentRoleId;
+                document.getElementById('pmRoleServer').textContent = currentRoleServer || '';
+            } else {
+                roleBar.style.display = 'none';
+            }
+
+            if (type === 'tier') {
+                var c = data;
+                document.getElementById('pmTierFields').style.display = 'flex';
+                document.getElementById('pmBonusFields').style.display = 'flex';
+                document.getElementById('pmGiftNameField').style.display = 'none';
+                document.getElementById('pmGiftContentField').style.display = 'none';
+                document.getElementById('pmPointsFields').style.display = 'flex';
+                var tokenEl2 = document.getElementById('pmTokenAmount');
+                var bonusEl2 = document.getElementById('pmBonusAmount');
+                tokenEl2.textContent = c.coinAmount || '';
+                tokenEl2.dataset.base = c.coinAmount || 0;
+                bonusEl2.textContent = c.bonusCoin !== undefined ? c.bonusCoin : 0;
+                bonusEl2.dataset.base = c.bonusCoin || 0;
+                _pmBasePrice = c.priceNum || 0;
+                // 积分默认 1元=100积分
+                _pmBasePoints = _pmBasePrice > 0 ? Math.round(_pmBasePrice / 100 * 100) : 0;
+                document.getElementById('pmPointsAmount').textContent = _pmBasePoints;
+                document.getElementById('pmTotalPrice').textContent = c.price;
+            } else {
+                var g = data;
+                document.getElementById('pmTierFields').style.display = 'none';
+                document.getElementById('pmBonusFields').style.display = 'none';
+                document.getElementById('pmGiftNameField').style.display = 'flex';
+                document.getElementById('pmGiftContentField').style.display = 'flex';
+                document.getElementById('pmPointsFields').style.display = 'flex';
+                document.getElementById('pmGiftName').textContent = g.name;
+                document.getElementById('pmGiftContent').textContent = g.content || '';
+                // 礼包价格可能是字符串如 "¥30"
+                var rawAmt = parseFloat((g.price || '').replace('¥','')) || 0;
+                _pmBasePrice = rawAmt * 100;
+                _pmBasePoints = rawAmt * 100;
+                document.getElementById('pmPointsAmount').textContent = _pmBasePoints;
+                document.getElementById('pmTotalPrice').textContent = g.price;
+            }
+
+            // 默认选微信支付（与移动端一致）
+            pmSelectMethod('wechat');
+
+            // 启动倒计时
+            _pmStartTimer();
+
+            document.getElementById('payModal').classList.add('show');
+        }
+
+        function closePayModal() {
+            if (_pmTimer) { clearInterval(_pmTimer); _pmTimer = null; }
+            document.getElementById('payModal').classList.remove('show');
+            setTimeout(function() {
+                document.getElementById('payResultOverlay').classList.remove('show');
+            }, 300);
+        }
+
+        function pmSelectMethod(method) {
+            document.getElementById('pmOptWechat').classList.toggle('selected', method === 'wechat');
+            document.getElementById('pmOptAlipay').classList.toggle('selected', method === 'alipay');
+            var isWechat = method === 'wechat';
+            var name = isWechat ? '微信支付' : '支付宝';
+            var shortName = isWechat ? '微信' : '支付宝';
+            document.getElementById('pmMethodName2').textContent = shortName;
+        }
+
+        function pmDecQty() {
+            if (_pmQty > 1) { _pmQty--; _pmRefreshQty(); }
+        }
+        function pmIncQty() {
+            if (_pmQty < 99) { _pmQty++; _pmRefreshQty(); }
+        }
+        function pmUpdateQty() {
+            var v = parseInt(document.getElementById('pmQtyInput').value) || 1;
+            _pmQty = Math.max(1, Math.min(99, v));
+            _pmRefreshQty();
+        }
+        function _pmRefreshQty() {
+            document.getElementById('pmQtyInput').value = _pmQty;
+            document.getElementById('pmDecBtn').disabled = _pmQty <= 1;
+            document.getElementById('pmIncBtn').disabled = _pmQty >= 99;
+            if (_pmBasePrice > 0) {
+                var total = (_pmBasePrice * _pmQty / 100).toFixed(0);
+                document.getElementById('pmTotalPrice').textContent = '¥' + total;
+                // 联动代币和积分
+                var tokenEl = document.getElementById('pmTokenAmount');
+                var bonusEl = document.getElementById('pmBonusAmount');
+                var pointsEl = document.getElementById('pmPointsAmount');
+                if (tokenEl && tokenEl.dataset.base) tokenEl.textContent = parseInt(tokenEl.dataset.base) * _pmQty;
+                if (bonusEl && bonusEl.dataset.base) bonusEl.textContent = parseInt(bonusEl.dataset.base) * _pmQty;
+                if (pointsEl) pointsEl.textContent = _pmBasePoints * _pmQty;
+            }
+        }
+
+        function _pmStartTimer() {
+            if (_pmTimer) clearInterval(_pmTimer);
+            var sec = 300;
+            document.getElementById('pmCountdown').textContent = sec;
+            _pmTimer = setInterval(function() {
+                sec--;
+                var el = document.getElementById('pmCountdown');
+                if (el) el.textContent = sec;
+                if (sec <= 0) {
+                    clearInterval(_pmTimer); _pmTimer = null;
+                    _pmShowResult(false, '二维码已过期', '请关闭后重新下单');
+                }
+            }, 1000);
+        }
+
+        function pmVerifyPayment() {
+            var ok = Math.random() < 0.8;
+            if (ok) {
+                _pmShowResult(true, '支付成功！', '代币将在5分钟内到账，感谢您的充值');
+            } else {
+                _pmShowResult(false, '暂未检测到支付', '请确认手机端已完成支付后再试');
+            }
+        }
+
+        function _pmShowResult(success, title, sub) {
+            if (_pmTimer) { clearInterval(_pmTimer); _pmTimer = null; }
+            document.getElementById('payResultIcon').textContent = success ? '✅' : '⚠️';
+            document.getElementById('payResultTitle').textContent = title;
+            document.getElementById('payResultTitle').style.color = success ? '#52c41a' : '#fa8c16';
+            document.getElementById('payResultSub').textContent = sub;
+            document.getElementById('payResultOverlay').classList.add('show');
+        }
+
+        // ── 档位/礼包选择 ─────────────────────────────────────
+        window.selectTier = function(el, idx) {
+            if (!currentRoleId) { openLoginModal(); return; }
+            document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
+            document.querySelectorAll('.gift-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            var c = window.__dynamicTiers ? window.__dynamicTiers[idx] : null;
+            var data;
+            if (c) {
+                data = {
+                    coinAmount: c.coinAmount,
+                    bonusCoin:  c.bonusCoin || 0,
+                    price:      '¥' + (c.price / 100).toFixed(0),
+                    priceNum:   c.price
+                };
+            } else {
+                var priceEl  = el.querySelector('.tier-price-bottom');
+                var amountEl = el.querySelector('.tier-amount');
+                var bonusEl  = el.querySelector('.tier-bonus');
+                var rawPrice = priceEl ? priceEl.textContent.replace('¥','') : '0';
+                data = {
+                    coinAmount: amountEl ? amountEl.textContent : '',
+                    bonusCoin:  bonusEl ? parseInt(bonusEl.textContent.replace('+','')) || 0 : 0,
+                    price:      priceEl ? priceEl.textContent : '',
+                    priceNum:   parseFloat(rawPrice) * 100
+                };
+            }
+            openOrderDrawer('tier', data);
+        };
+
+        window.selectGift = function(el, idx) {
+            if (!currentRoleId) { openLoginModal(); return; }
+            document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
+            document.querySelectorAll('.gift-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            var g = window.__dynamicGifts ? window.__dynamicGifts[idx] : null;
+            var data;
+            if (g) {
+                data = { name: g.giftName, content: g.content || '', price: '¥' + g.amount };
+            } else {
+                var nameEl  = el.querySelector('.gift-name');
+                var priceEl = el.querySelector('.gift-price');
+                var contEl  = el.querySelector('.gift-limit');
+                data = {
+                    name:    nameEl    ? nameEl.textContent    : '',
+                    content: contEl    ? contEl.textContent    : '',
+                    price:   priceEl   ? priceEl.textContent   : ''
+                };
+            }
+            openOrderDrawer('gift', data);
+        };
+    </script>
+
+    <!-- 主题颜色 postMessage 监听 -->
+    <script>
+    window.addEventListener('message', function(e) {
+        var d = e.data;
+        if (!d || d.type !== 'THEME_UPDATE') return;
+        var r = document.documentElement.style;
+        if (d.pageBackground  !== undefined) r.setProperty('--theme-page-bg',     d.pageBackground);
+        if (d.navBar          !== undefined) r.setProperty('--theme-nav-bg',       d.navBar);
+        if (d.noticeBg        !== undefined) r.setProperty('--theme-notice-bg',    d.noticeBg);
+        if (d.authModule      !== undefined) r.setProperty('--theme-auth-bg',      d.authModule);
+        if (d.rechargeModule  !== undefined) r.setProperty('--theme-recharge-bg',  d.rechargeModule);
+        if (d.footer          !== undefined) r.setProperty('--theme-footer-bg',    d.footer);
+        if (d.modalBg         !== undefined) r.setProperty('--theme-modal-bg',     d.modalBg);
+        if (d.drawerBg        !== undefined) r.setProperty('--theme-drawer-bg',    d.drawerBg);
+    });
+    </script>
+
+    <!-- PRD 按钮 -->
+    <button id="prdFloatBtn" onclick="openPrdPanel()" title="查看PRD文档">PRD</button>
+    <script>if (window !== window.top) { document.getElementById('prdFloatBtn').style.display = 'none'; }</script>
+
+    <!-- PRD 侧面板 -->
+    <div id="prdPanel">
+        <div id="prdPanelHeader">
+            <span>📄 PRD 文档</span>
+            <button onclick="closePrdPanel()">✕</button>
+        </div>
+        <div id="prdPanelMain">
+            <div id="prdVersionSidebar">
+                <div class="prd-version-title">版本历史</div>
+                <ul id="prdVersionList"></ul>
+                <div id="prdTocBox">
+                    <div class="prd-toc-title">目录</div>
+                    <ul id="prdTocList"></ul>
+                </div>
+            </div>
+            <div id="prdPanelBody">加载中…</div>
+        </div>
+    </div>
+
+    <style>
+        #prdFloatBtn {
+            position: fixed;
+            top: 64px;
+            right: 16px;
+            padding: 6px 14px;
+            background: #722ed1;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            z-index: 8000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+            transition: background 0.2s;
+        }
+        #prdFloatBtn:hover { background: #531dab; }
+        
+        .prd-mermaid-wrap { text-align:center; background:#fafbfc; border:1px solid #e4e7ed; border-radius:8px; padding:20px; margin:16px 0; overflow-x:auto; }
+        .prd-mermaid-wrap svg { max-width:100%; height:auto; }
+        #prdPanel {
+            display: none;
+            position: fixed;
+            top: 0; right: 0;
+            width: 680px; max-width: 96vw; height: 100vh;
+            background: #fff;
+            box-shadow: -4px 0 24px rgba(0,0,0,0.18);
+            z-index: 9000;
+            flex-direction: column;
+        }
+        #prdPanel.show { display: flex; }
+        #prdPanelHeader {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 20px;
+            background: #722ed1; color: white;
+            font-size: 15px; font-weight: 600; flex-shrink: 0;
+        }
+        #prdPanelHeader button { background: none; border: none; color: white; font-size: 20px; cursor: pointer; line-height: 1; }
+        #prdPanelMain { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+        #prdVersionSidebar {
+            width: 160px; flex-shrink: 0;
+            background: #f9f0ff; border-right: 1px solid #e9d8fd;
+            overflow-y: auto; padding: 12px 0;
+        }
+        .prd-version-title, .prd-toc-title {
+            font-size: 11px; font-weight: 600; color: #722ed1;
+            padding: 0 14px 8px; text-transform: uppercase; letter-spacing: 0.5px;
+            border-bottom: 1px solid #e9d8fd; margin-bottom: 4px;
+        }
+        .prd-toc-title { border-bottom: none; margin-bottom: 0; }
+        #prdVersionList { list-style: none; margin: 0; padding: 0; }
+        .prd-version-item {
+            padding: 10px 14px; cursor: pointer;
+            border-left: 3px solid transparent; transition: background 0.15s;
+        }
+        .prd-version-item:hover { background: #efe5ff; }
+        .prd-version-item.active { background: #efe5ff; border-left-color: #722ed1; }
+        .prd-version-label { font-size: 12px; font-weight: 600; color: #333; }
+        .prd-version-item.active .prd-version-label { color: #722ed1; }
+        .prd-version-date { font-size: 10px; color: #999; margin-top: 2px; }
+        #prdTocBox { border-top: 1px solid #e9d8fd; margin-top: 6px; padding-top: 8px; }
+        #prdTocList { list-style: none; margin: 0; padding: 0; }
+        .prd-toc-item {
+            padding: 5px 14px; cursor: pointer; font-size: 11px; line-height: 1.4; color: #555;
+            border-left: 3px solid transparent; transition: background 0.15s;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .prd-toc-item:hover { background: #efe5ff; color: #722ed1; }
+        .prd-toc-item.toc-h3 { padding-left: 24px; color: #888; font-size: 10.5px; }
+        .prd-toc-item.toc-h3:hover { color: #722ed1; }
+        .prd-toc-item.toc-active { background: #efe5ff; border-left-color: #722ed1; color: #722ed1; }
+        #prdPanelBody {
+            flex: 1; overflow-y: auto; min-height: 0;
+            padding: 24px 28px; font-size: 14px; line-height: 1.8; color: #333;
+        }
+        #prdPanelBody h1 { font-size: 20px; margin: 0 0 16px; color: #1a1a1a; }
+        #prdPanelBody h2 { font-size: 17px; margin: 28px 0 10px; color: #222; border-bottom: 2px solid #f0f0f0; padding-bottom: 6px; }
+        #prdPanelBody h3 { font-size: 15px; margin: 20px 0 8px; color: #333; }
+        #prdPanelBody h4 { font-size: 14px; margin: 16px 0 6px; color: #444; }
+        #prdPanelBody table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 13px; }
+        #prdPanelBody th { background: #f5f0ff; color: #531dab; padding: 7px 10px; text-align: left; border: 1px solid #e8e0f5; }
+        #prdPanelBody td { padding: 6px 10px; border: 1px solid #eee; vertical-align: top; }
+        #prdPanelBody tr:nth-child(even) td { background: #fafafa; }
+        #prdPanelBody code { background: #f5f5f5; padding: 1px 5px; border-radius: 3px; font-size: 12px; color: #c41d7f; }
+        #prdPanelBody pre { background: #f6f8fa; border-radius: 6px; padding: 14px; overflow-x: auto; font-size: 12px; line-height: 1.6; margin: 10px 0; }
+        #prdPanelBody pre code { background: none; padding: 0; color: #333; }
+        #prdPanelBody blockquote { border-left: 3px solid #722ed1; margin: 8px 0; padding: 6px 14px; background: #f9f0ff; color: #555; border-radius: 0 4px 4px 0; }
+        #prdPanelBody ul, #prdPanelBody ol { padding-left: 20px; margin: 6px 0; }
+        #prdPanelBody li { margin: 3px 0; }
+        #prdPanelBody hr { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+        #prdPanelBody a { color: #722ed1; }
+        #prdPanelBody strong { font-weight: 700; color: #1a1a1a; }
+    </style>
+
+    <script>
+        var prdVersions = [
+          {label:"v1.0 (最新)",date:"2026-04-16",content:"# 游戏充值中心（国内版 PC 端）- PRD\n\n**文档版本**：v1.0\n**创建日期**：2026-04-16\n\n---\n\n> **原型阶段说明**\n> 当前为产品原型阶段，页面内使用模拟数据展示效果。正式上线后，所有数据均从 B 端配置管理系统通过接口获取。\n\n---\n\n## 1. 产品概述\n\n国内版 PC 端充值页是国内充值站点的桌面端页面，供玩家在电脑上进行充值，也供运营人员通过 B 端「主题颜色配置」的 iframe 预览 PC 端效果。可通过 `?site=站点名` 参数直接访问，也可双击文件打开。\n\n### 1.1 整体布局\n\n```\n┌────────────────────────────────────────┐\n│ 顶部导航（Logo + 登录按钮/用户头像下拉）  │\n├────────────────────────────────────────┤\n│ Banner（240px 高，全宽轮播）             │\n├────────────────────────────────────────┤\n│ 通知栏（公告横幅）                       │\n├────────────────────────────────────────┤\n│ 主内容区（max-width: 1100px）            │\n│  Tab：代币充值 / 礼包活动               │\n│  代币档位（3列网格）                    │\n│  礼包列表（竖向卡片列表）               │\n├────────────────────────────────────────┤\n│ 页脚（充值说明三栏横向布局）             │\n└────────────────────────────────────────┘\n```\n\n---\n\n## 2. 数据来源与接入\n\n通过 URL 参数 `?site=站点名` 加载 B 端数据，规则与移动端一致：\n\n| 数据类型 | 筛选条件 | 说明 |\n|---------|---------|------|\n| 站点信息 | `name === 站点名` | Logo、主题色、登录方式 |\n| 代币档位 | `siteName === 站点名 && status === 2` | 充值档位列表 |\n| 礼包 | `siteName === 站点名 && giftStatus === 2` | 礼包活动列表 |\n| Banner | `siteName === 站点名 && status === 2` | 轮播 Banner（时间有效） |\n| 通知栏 | `siteName === 站点名 && status === 2` | 公告通知（时间有效） |\n| 主题颜色 | postMessage 实时推送 | B端预览时即时更新 |\n\n无数据时展示静态兜底内容。\n\n---\n\n## 3. Banner 展示规则\n\n规则与国内移动端一致（见国内移动端 PRD § 3）。PC 端 Banner 高度 240px。\n\n---\n\n## 4. 通知栏展示规则\n\n规则与国内移动端一致（见国内移动端 PRD § 4）。\n\n---\n\n## 5. 登录弹窗\n\n居中弹窗（480px 宽），三 Tab 切换：\n\n| Tab | 登录方式 | 说明 |\n|-----|---------|------|\n| 手机号登录 | 手机号 + 验证码 | 验证码60秒倒计时，提示「X秒后重新获取验证码」，结束后变「重新发送」；无锁定规则 |\n| 账密登录 | 账号 + 密码 | 正确后选择服务器和角色 |\n| 角色ID验证 | 角色ID | 直接验证，成功后显示角色信息 |\n\n登录成功后：顶部导航栏显示用户头像和下拉菜单（含切换角色/退出登录）。\n\n---\n\n## 6. 代币档位卡片结构\n\n与移动端一致（三图结构），PC 端为 3 列网格展示：\n\n| 层级 | 图片来源 | 默认图 |\n|------|---------|--------|\n| 上方充值项大图 | 代币配置 `coinItemImage`（必填） | `images/充值项图片.png` |\n| 代币行图标 | 站点配置 `coinImage` | `images/代币图片.png` |\n| 赠送代币行图标 | 站点配置 `bonusCoinImage` | `images/赠送代币图片.png` |\n\n---\n\n## 7. 礼包卡片结构\n\n```\n┌──────────────────────────────────────┐\n│ 赠送XXX积分（左上绝对定位）            │\n│ [图片80x80] | 名称/价格/内容/时间      │  [立即购买]\n├──────────────────────────────────────┤\n│ 礼包描述文字（底部，分隔线）           │\n└──────────────────────────────────────┘\n```\n\n---\n\n## 8. 支付流程\n\n```mermaid\nflowchart TD\n    A([选择代币档位 / 礼包]) --> B{是否已登录}\n    B -->|未登录| C[\"弹出登录弹窗\\n三Tab居中弹窗\"]\n    C --> D\n    B -->|已登录| D[\"弹出支付弹窗\\n居中弹窗（480px宽）\"]\n    D --> E[\"展示订单信息\\n角色信息栏\\n代币/赠送/积分\\n购买数量（1~99）\"]\n    E --> F([选择支付方式\\n微信支付 / 支付宝])\n    F --> G[\"展示二维码区域\\n300秒倒计时\\n「我已完成支付」按钮\"]\n    G --> H([点击「我已完成支付」])\n    H --> I{支付验证}\n    I -->|成功| J[结果覆盖层：支付成功]\n    I -->|失败| K[结果覆盖层：支付失败]\n```\n\n---\n\n## 9. 主题颜色支持\n\n| B 端字段名 | 中文说明 | 对应 C 端区域 |\n|-----------|---------|--------------|\n| 页面背景色 | 整个充值页面的底色 | 页面 `body` 背景 |\n| 顶部导航栏 | 顶部 Logo 和按钮所在的导航条 | `.header` |\n| 通知栏 | Banner 下方公告横幅背景 | `.notice-bar` |\n| 角色验证模块 | 已登录角色信息卡片背景色 | `.role-info` |\n| 充值模块 | 代币档位/礼包面板背景色 | `.recharge-card` |\n| 页脚 | 页面底部三栏说明区域背景色 | `.footer` |\n| 订单确认抽屉 | 支付弹窗背景色 | 支付弹窗 |\n\n---\n\n\n---\n\n## 测试账号（原型演示用）\n\n> 以下为原型阶段 Mock 数据，仅用于功能演示，上线后替换为真实接口。\n\n### 手机号 + 验证码登录\n\n| 项目 | 值 |\n|------|-----|\n| 手机号 | 任意11位手机号均可 |\n| 验证码 | `123456` |\n\n### 账密登录\n\n| 账号 | 密码 |\n|------|------|\n| `test` | `123456` |\n\n### 角色ID验证\n\n| 角色ID | 服务器 | 角色名 | 等级 |\n|--------|--------|--------|------|\n| `10001` | 一区-艾泽拉斯 | 剑圣 | Lv.85 |\n| `10002` | 二区-洛丹伦 | 法师 | Lv.80 |\n| `10003` | 三区-暴风城 | 战士 | Lv.90 |\n\n\n## 版本历史\n\n| 版本 | 日期 | 内容 |\n|------|------|------|\n| v1.0 | 2026-04-16 | 初始版本 |\n"}
+        ];
+        var prdCurrentVersion = 0;
+        var prdLoaded = false;
+
+        function openPrdPanel() {
+            document.getElementById('prdPanel').classList.add('show');
+            if (!prdLoaded) {
+                // 渲染版本列表
+                var ul = document.getElementById('prdVersionList');
+                ul.innerHTML = prdVersions.map(function(v, i) {
+                    return '<li class="prd-version-item' + (i===0?' active':'') + '" onclick="switchPrdVersion(' + i + ')" title="' + escAttrPc(v.label) + '">'
+                        + '<div class="prd-version-label">' + escHtmlPc(v.label) + '</div>'
+                        + '<div class="prd-version-date">' + escHtmlPc(v.date) + '</div>'
+                        + '</li>';
+                }).join('');
+                loadPrdVersion(0);
+                prdLoaded = true;
+            }
+        }
+        function closePrdPanel() { document.getElementById('prdPanel').classList.remove('show'); }
+        function switchPrdVersion(idx) {
+            if (idx === prdCurrentVersion) return;
+            prdCurrentVersion = idx;
+            document.querySelectorAll('.prd-version-item').forEach(function(el, i) {
+                el.classList.toggle('active', i === idx);
+            });
+            loadPrdVersion(idx);
+        }
+        function loadPrdVersion(idx) {
+            document.getElementById('prdPanelBody').innerHTML = renderMarkdownPc(prdVersions[idx].content);
+            document.getElementById('prdPanelBody').scrollTop = 0;
+            buildTocPc();
+            if (typeof mermaid !== 'undefined') {
+                setTimeout(function() {
+                    var blocks = document.querySelectorAll('#prdPanelBody pre > code.language-mermaid, #prdPanelBody code.language-mermaid:not(.mermaid-done)');
+                    blocks.forEach(async function(code) {
+                        code.classList.add('mermaid-done');
+                        var pre = code.parentElement;
+                        var id = 'mermaid-c-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+                        try { var r = await mermaid.render(id, code.textContent.trim()); var w = document.createElement('div'); w.className = 'prd-mermaid-wrap'; w.innerHTML = r.svg; pre.replaceWith(w); } catch(e) {}
+                    });
+                }, 0);
+            }
+        }
+        function buildTocPc() {
+            var body = document.getElementById('prdPanelBody');
+            var tocList = document.getElementById('prdTocList');
+            if (!body || !tocList) return;
+            var items = [];
+            body.querySelectorAll('h2, h3').forEach(function(h, i) {
+                var id = 'pc-prd-anchor-' + i;
+                h.id = id;
+                var level = h.tagName.toLowerCase();
+                items.push('<li class="prd-toc-item toc-' + level + '" onclick="scrollTocPc(\'' + id + '\')" title="' + escAttrPc(h.textContent) + '">' + escHtmlPc(h.textContent) + '</li>');
+            });
+            tocList.innerHTML = items.join('');
+        }
+        function scrollTocPc(anchorId) {
+            var body = document.getElementById('prdPanelBody');
+            var target = document.getElementById(anchorId);
+            if (!body || !target) return;
+            document.querySelectorAll('.prd-toc-item').forEach(function(el) { el.classList.remove('toc-active'); });
+            document.querySelectorAll('.prd-toc-item').forEach(function(el) {
+                if (el.getAttribute('onclick') === "scrollTocPc('" + anchorId + "')") el.classList.add('toc-active');
+            });
+            body.scrollTo({ top: body.scrollTop + target.getBoundingClientRect().top - body.getBoundingClientRect().top - 16, behavior: 'smooth' });
+        }
+        function escHtmlPc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        function escAttrPc(s) { return escHtmlPc(s).replace(/"/g,'&quot;'); }
+        function inlineFmtPc(s) {
+            s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+            s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            return s;
+        }
+        function renderTablePc(head, rows) {
+            var ths = head.split('|').slice(1,-1).map(function(c){return '<th>'+escHtmlPc(c.trim())+'</th>';}).join('');
+            var trs = rows.map(function(r){return '<tr>'+r.split('|').slice(1,-1).map(function(c){return '<td>'+escHtmlPc(c.trim())+'</td>';}).join('')+'</tr>';}).join('');
+            return '<table><thead><tr>'+ths+'</tr></thead><tbody>'+trs+'</tbody></table>';
+        }
+        function renderMarkdownPc(md) {
+            var lines = md.split('\n'), out = [], inCode = false, codeLang = '', codeBuf = [], inTable = false, tableHead = '', tableRows = [];
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i];
+                if (line.startsWith('```')) {
+                    if (inCode) { var cls=codeLang?' class="language-'+codeLang+'"':''; out.push('<pre><code'+cls+'>'+escHtmlPc(codeBuf.join('\n'))+'</code></pre>'); inCode=false; codeLang=''; codeBuf=[]; }
+                    else { inCode=true; codeLang=line.slice(3).trim(); }
+                    continue;
+                }
+                if (inCode) { codeBuf.push(line); continue; }
+                if (line.trim().startsWith('|')) {
+                    if (!inTable) { inTable=true; tableHead=line; tableRows=[]; }
+                    else if (/^[\s|:-]+$/.test(line)) { /* sep */ }
+                    else tableRows.push(line);
+                    continue;
+                } else if (inTable) { out.push(renderTablePc(tableHead, tableRows)); inTable=false; tableHead=''; tableRows=[]; }
+                if (!line.trim()) { out.push(''); continue; }
+                if (line.startsWith('#### ')) { out.push('<h4>'+escHtmlPc(line.slice(5))+'</h4>'); continue; }
+                if (line.startsWith('### '))  { out.push('<h3>'+escHtmlPc(line.slice(4))+'</h3>'); continue; }
+                if (line.startsWith('## '))   { out.push('<h2>'+escHtmlPc(line.slice(3))+'</h2>'); continue; }
+                if (line.startsWith('# '))    { out.push('<h1>'+escHtmlPc(line.slice(2))+'</h1>'); continue; }
+                if (line.startsWith('---'))   { out.push('<hr>'); continue; }
+                if (line.startsWith('> '))    { out.push('<blockquote>'+escHtmlPc(line.slice(2))+'</blockquote>'); continue; }
+                if (line.match(/^(\s*[-*]\s)/)) {
+                    var items = [];
+                    while (i < lines.length && lines[i].match(/^(\s*[-*]\s)/)) { items.push('<li>'+inlineFmtPc(escHtmlPc(lines[i].replace(/^\s*[-*]\s/,'')))+'</li>'); i++; }
+                    i--; out.push('<ul>'+items.join('')+'</ul>'); continue;
+                }
+                if (line.match(/^\d+\.\s/)) {
+                    var oitems = [];
+                    while (i < lines.length && lines[i].match(/^\d+\.\s/)) { oitems.push('<li>'+inlineFmtPc(escHtmlPc(lines[i].replace(/^\d+\.\s/,'')))+'</li>'); i++; }
+                    i--; out.push('<ol>'+oitems.join('')+'</ol>'); continue;
+                }
+                out.push('<p>'+inlineFmtPc(escHtmlPc(line))+'</p>');
+            }
+            if (inTable) out.push(renderTablePc(tableHead, tableRows));
+            return out.join('\n');
+        }
+        // 点击面板外区域关闭
+        document.addEventListener('click', function(e) {
+            var panel = document.getElementById('prdPanel');
+            var btn = document.getElementById('prdFloatBtn');
+            if (panel && panel.classList.contains('show') && !panel.contains(e.target) && e.target !== btn) {
+                panel.classList.remove('show');
+            }
+        });
+    </script>
+
+
+</body>
+</html>

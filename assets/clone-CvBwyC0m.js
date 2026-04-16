@@ -1,0 +1,1 @@
+import{t as e}from"./_baseClone-CQAOdRtn.js";var t=4;function n(n){return e(n,t)}export{n as t};

@@ -4,202 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>游戏充值中心 - 国内版</title>
-    <!-- B端数据适配层：从localStorage读取B端配置，渲染真实数据 -->
-    <script>
-    (function() {
-        const p = new URLSearchParams(location.search);
-        const SITE = p.get('site') || '';
-
-        // ── 工具函数 ──────────────────────────────────────────
-        function ls(key) {
-            try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) { return []; }
-        }
-        function lsObj(key) {
-            try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch(e) { return null; }
-        }
-
-        // ── 读取B端配置 ───────────────────────────────────────
-        const siteList   = ls('site_config_data');
-        const siteInfo   = siteList.find(s => s.name === SITE) || {};
-        const coins      = ls('coin_config_data').filter(c => c.siteName === SITE && c.status === 2);
-        const gifts      = ls('gift_config_data').filter(g => g.siteName === SITE && g.giftStatus === 2 && g.enabled !== false);
-        const banners    = ls('banner_config_data').filter(b => b.siteName === SITE && b.status === 2);
-        const notices    = ls('notification_config_data').filter(n => n.siteName === SITE && n.status === 2);
-
-        // ── 更新页面标题 ───────────────────────────────────────
-        if (siteInfo.pageTitle) document.title = siteInfo.pageTitle;
-
-        // ── DOMContentLoaded 后执行渲染 ───────────────────────
-        document.addEventListener('DOMContentLoaded', function() {
-
-            // ── 站点Logo ──────────────────────────────────────
-            if (siteInfo.gameLogo) {
-                const logos = document.querySelectorAll('.game-icon');
-                logos.forEach(el => { el.src = siteInfo.gameLogo; });
-            }
-
-            // ── Banner ────────────────────────────────────────
-            const bannerEl = document.querySelector('.banner');
-            if (bannerEl && banners.length > 0) {
-                const now = Date.now();
-                const activeBanners = banners.filter(b => {
-                    // B端Banner存startTime/endTime（字符串），effectiveTime是数组
-                    if (!b.startTime && !b.endTime) return true;
-                    const s = b.startTime ? new Date(b.startTime).getTime() : 0;
-                    const e = b.endTime ? new Date(b.endTime).getTime() : Infinity;
-                    return now >= s && now <= e;
-                });
-                if (activeBanners.length > 0) {
-                    // 多张Banner支持轮播
-                    const imgs = activeBanners.map((b, i) => `
-                        <div class="banner-slide" style="display:${i===0?'block':'none'}; width:100%; height:100%; position:absolute; top:0; left:0;">
-                            ${b.jumpUrl
-                                ? `<a href="${b.jumpUrl}" target="_blank"><img src="${b.bannerImage||'banner.jpg'}" style="width:100%;height:100%;object-fit:cover;"></a>`
-                                : `<img src="${b.bannerImage||'banner.jpg'}" style="width:100%;height:100%;object-fit:cover;">`
-                            }
-                        </div>`).join('');
-                    const dots = activeBanners.length > 1 ? `
-                        <div class="banner-dots">
-                            ${activeBanners.map((_,i) => `<div class="banner-dot ${i===0?'active':''}"></div>`).join('')}
-                        </div>` : '';
-                    bannerEl.style.position = 'relative';
-                    bannerEl.innerHTML = imgs + dots;
-                    // 自动轮播
-                    if (activeBanners.length > 1) {
-                        let cur = 0;
-                        setInterval(() => {
-                            const slides = bannerEl.querySelectorAll('.banner-slide');
-                            const dotsEl = bannerEl.querySelectorAll('.banner-dot');
-                            slides[cur].style.display = 'none';
-                            dotsEl[cur] && dotsEl[cur].classList.remove('active');
-                            cur = (cur + 1) % slides.length;
-                            slides[cur].style.display = 'block';
-                            dotsEl[cur] && dotsEl[cur].classList.add('active');
-                        }, 3000);
-                    }
-                }
-            }
-
-            // ── 通知栏 ────────────────────────────────────────
-            const noticeBar = document.getElementById('noticeBar');
-            if (noticeBar && notices.length > 0) {
-                const now = Date.now();
-                const activeNotice = notices.find(n => {
-                    // B端Notification存startTime/endTime，无effectiveTime字段
-                    if (!n.startTime && !n.endTime) return true;
-                    const s = n.startTime ? new Date(n.startTime).getTime() : 0;
-                    const e = n.endTime ? new Date(n.endTime).getTime() : Infinity;
-                    return now >= s && now <= e;
-                });
-                if (activeNotice) {
-                    const linkHtml = (activeNotice.linkText && activeNotice.linkUrl)
-                        ? ` <a href="${activeNotice.linkUrl}" target="_blank" style="color:#fa8c16;text-decoration:underline;">${activeNotice.linkText}</a>`
-                        : '';
-                    noticeBar.querySelector('.notice-text').innerHTML = (activeNotice.content || '') + linkHtml;
-                    noticeBar.style.display = 'flex';
-                } else {
-                    noticeBar.style.display = 'none';
-                }
-            } else if (noticeBar && notices.length === 0) {
-                noticeBar.style.display = 'none';
-            }
-
-            // ── 代币档位 ──────────────────────────────────────
-            const tierTab = document.getElementById('tier-tab');
-            if (tierTab && coins.length > 0) {
-                // B端字段: type='fixed'|'custom', price=价格(分), coinAmount=代币数, bonusCoin=赠送代币
-                const fixedCoins = coins.filter(c => !c.type || c.type === 'fixed');
-                const customCoins = coins.filter(c => c.type === 'custom');
-
-                if (fixedCoins.length > 0) {
-                    const tierGrid = tierTab.querySelector('.tier-grid');
-                    if (tierGrid) {
-                        tierGrid.innerHTML = fixedCoins.map((c, idx) => {
-                            const price = (c.price / 100).toFixed(0);
-                            const bonusHtml = c.bonusCoin > 0
-                                ? `<div class="tier-bonus-group"><span class="tier-plus">+</span><div class="tier-bonus-icon"><img src="daibi.png" alt="" class="tier-bonus-icon"></div><div class="tier-bonus">${c.bonusCoin}</div></div>`
-                                : '';
-                            const pointsHtml = c.price > 0
-                                ? `<div class="tier-points-top">赠送${c.price}积分</div>`
-                                : '';
-                            return `
-                            <div class="tier-card" onclick="selectTierDynamic(${idx})">
-                                ${pointsHtml}
-                                <div class="tier-content">
-                                    <div class="tier-token-group">
-                                        <img src="daibi.png" alt="代币" class="tier-main-icon">
-                                        <div class="tier-amount">${c.coinAmount}</div>
-                                    </div>
-                                    ${bonusHtml}
-                                </div>
-                                <div class="tier-price-bottom">¥${price}</div>
-                            </div>`;
-                        }).join('');
-                    }
-                }
-
-                // 注入动态选档函数（替换硬编码的 selectTier）
-                window.__dynamicTiers = fixedCoins;
-                window.selectTierDynamic = function(idx) {
-                    const c = window.__dynamicTiers[idx];
-                    if (!c) return;
-                    if (!currentRoleId) { showModal('loginModal'); return; }
-                    document.querySelectorAll('.tier-card').forEach(el => el.classList.remove('selected'));
-                    event.currentTarget.classList.add('selected');
-                    selectedType = 'tier';
-                    selectedId = idx;
-                    const price = c.price / 100;
-                    updateOrderSummary(`${c.coinAmount}代币`, price, c.coinAmount, c.bonusCoin || 0);
-                    showDrawer();
-                };
-            }
-
-            // ── 礼包列表 ──────────────────────────────────────
-            const giftTab = document.getElementById('gift-tab');
-            if (giftTab && gifts.length > 0) {
-                window.__dynamicGifts = gifts;
-                giftTab.innerHTML = gifts.map((g, idx) => {
-                    const price = g.amount;
-                    const timeStr = g.activityTime || '';
-                    return `
-                    <div class="gift-card" onclick="selectGiftDynamic(${idx})">
-                        <div class="gift-main">
-                            <div class="gift-left">
-                                <img src="${g.giftImage || 'libao.png'}" alt="${g.giftName}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;">
-                            </div>
-                            <div class="gift-middle">
-                                <div class="gift-name">${g.giftName}</div>
-                                <div class="gift-price">¥${price}</div>
-                                <div class="gift-limit">限购${g.limitCount}次（${g.limitType === 'total' ? '总计' : g.limitType === 'daily' ? '每天' : '每周'}）</div>
-                                <div class="gift-time">${timeStr}</div>
-                            </div>
-                            <div class="gift-right">
-                                <button class="gift-buy-btn" onclick="event.stopPropagation();selectGiftDynamic(${idx})">购买</button>
-                            </div>
-                        </div>
-                        <div class="gift-bottom">
-                            <div class="gift-desc">${g.content || ''}</div>
-                        </div>
-                    </div>`;
-                }).join('');
-
-                window.selectGiftDynamic = function(idx) {
-                    const g = window.__dynamicGifts[idx];
-                    if (!g) return;
-                    if (!currentRoleId) { showModal('loginModal'); return; }
-                    document.querySelectorAll('.tier-card, .gift-card').forEach(el => el.classList.remove('selected'));
-                    const cards = document.querySelectorAll('.gift-card');
-                    if (cards[idx]) cards[idx].classList.add('selected');
-                    selectedType = 'gift';
-                    selectedId = idx;
-                    updateOrderSummary(g.giftName, g.amount, 0, 0, g.amount * 100, g.content || '');
-                    showDrawer();
-                };
-            }
-
-        }); // end DOMContentLoaded
-    })();
-    </script>
     <style>
         * {
             margin: 0;
@@ -209,22 +13,22 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: #f5f7fa;
+            background: var(--theme-page-bg, #F5F7FA);
             min-height: 100vh;
             padding-top: 60px;
             padding-bottom: 80px;
             max-width: 480px;
-            margin: 0 auto;
+            margin: 0 auto; overflow-x: hidden;
         }
 
         .header {
             position: fixed;
             top: 0;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 0; right: 0; margin: 0 auto;
+            
             max-width: 480px;
             width: 100%;
-            background: white;
+            background: var(--theme-nav-bg, white);
             padding: 12px 15px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             display: flex;
@@ -338,7 +142,7 @@
         }
 
         .role-info {
-            background: #e6f7ff;
+            background: var(--theme-auth-bg, #E6F7FF);
             padding: 10px 15px;
             border-radius: 6px;
             margin-bottom: 15px;
@@ -425,7 +229,7 @@
         }
 
         .notice-bar {
-            background: #fff7e6;
+            background: var(--theme-notice-bg, #FFF7E6);
             border-left: 3px solid #faad14;
             padding: 10px 15px;
             border-radius: 6px;
@@ -452,7 +256,7 @@
         }
 
         .card {
-            background: white;
+            background: var(--theme-recharge-bg, white);
             border-radius: 8px;
             padding: 15px;
             margin-bottom: 15px;
@@ -544,7 +348,15 @@
         .tier-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
+            gap: 8px;
+        }
+
+        /* ── iframe 小视口兼容：340px 宽时改为2列，避免溢出 ── */
+        @media (max-width: 360px) {
+            .tier-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .tier-card { padding: 16px 6px 10px 6px; }
+            .tier-main-icon, .tier-bonus-icon { width: 36px; height: 36px; }
+            .tier-amount { font-size: 15px; }
         }
 
         .tier-card {
@@ -581,55 +393,54 @@
             z-index: 1;
         }
 
-        .tier-content {
+        /* 充值项图片（上方大图） */
+        .tier-item-img-wrap {
+            width: 100%;
+            aspect-ratio: 4/3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 8px;
+            overflow: hidden;
+        }
+        .tier-item-img {
+            width: 80%;
+            height: 80%;
+            object-fit: contain;
+        }
+
+        /* 代币数量行（图标+数量横排） */
+        .tier-amount-row {
             display: flex;
             flex-direction: row;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            margin-bottom: 12px;
-            width: 100%;
+            gap: 4px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
         }
-
-        .tier-token-group {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .tier-main-icon {
-            width: 48px;
-            height: 48px;
-            margin-bottom: 4px;
+        .tier-coin-icon {
+            width: 20px;
+            height: 20px;
+            object-fit: contain;
+            vertical-align: middle;
         }
 
         .tier-amount {
-            font-size: 18px;
+            font-size: 15px;
             font-weight: bold;
             color: #333;
         }
 
         .tier-plus {
-            font-size: 20px;
+            font-size: 14px;
             color: #999;
             font-weight: normal;
         }
 
-        .tier-bonus-group {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .tier-bonus-icon {
-            width: 48px;
-            height: 48px;
-            margin-bottom: 4px;
-        }
-
         .tier-bonus {
-            font-size: 16px;
-            color: #333;
+            font-size: 14px;
+            color: #fa8c16;
             font-weight: 500;
         }
 
@@ -782,7 +593,7 @@
         .points-mall-tab.active {
             color: #1890ff;
             border-color: #1890ff;
-            background: #e6f7ff;
+            background: var(--theme-auth-bg, #E6F7FF);
             font-weight: 600;
         }
 
@@ -1023,7 +834,7 @@
 
         .wheel-broadcast {
             width: 100%;
-            background: #fff7e6;
+            background: var(--theme-notice-bg, #FFF7E6);
             border: 1px solid #faad14;
             border-radius: 6px;
             padding: 8px 12px;
@@ -1370,7 +1181,7 @@
 
         .cumulative-card.available {
             border-color: #1890ff;
-            background: #e6f7ff;
+            background: var(--theme-auth-bg, #E6F7FF);
         }
 
         .cumulative-main {
@@ -1545,7 +1356,7 @@
         }
 
         .modal-box {
-            background: white;
+            background: var(--theme-modal-bg, white);
             border-radius: 12px;
             padding: 24px;
             width: 90%;
@@ -1635,7 +1446,7 @@
 
         .role-item.selected {
             border-color: #1890ff;
-            background: #e6f7ff;
+            background: var(--theme-auth-bg, #E6F7FF);
         }
 
         .role-item-name {
@@ -1653,21 +1464,21 @@
         .order-drawer {
             position: fixed;
             bottom: 0;
-            left: 50%;
-            transform: translateX(-50%) translateY(100%);
+            left: 0; right: 0; margin: 0 auto;
+            transform: translateY(100%);
             max-width: 480px;
             width: 100%;
-            background: white;
+            background: var(--theme-drawer-bg, white);
             border-radius: 16px 16px 0 0;
             box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
             z-index: 999;
             transition: transform 0.3s ease;
-            max-height: 70vh;
+            max-height: 460px;
             overflow-y: auto;
         }
 
         .order-drawer.show {
-            transform: translateX(-50%) translateY(0);
+            transform: translateY(0);
         }
 
         .drawer-handle {
@@ -1805,7 +1616,7 @@
 
         .payment-option.selected {
             border-color: #1890ff;
-            background: #e6f7ff;
+            background: var(--theme-auth-bg, #E6F7FF);
             color: #1890ff;
             font-weight: 600;
         }
@@ -1873,7 +1684,7 @@
         }
 
         .footer-info {
-            background: white;
+            background: var(--theme-footer-bg, white);
             border-radius: 8px;
             padding: 20px 15px;
             margin-bottom: 15px;
@@ -1926,8 +1737,8 @@
         .role-drawer {
             position: fixed;
             bottom: 0;
-            left: 50%;
-            transform: translateX(-50%) translateY(100%);
+            left: 0; right: 0; margin: 0 auto;
+            transform: translateY(100%);
             max-width: 480px;
             width: 100%;
             background: white;
@@ -1938,7 +1749,7 @@
         }
 
         .role-drawer.show {
-            transform: translateX(-50%) translateY(0);
+            transform: translateY(0);
         }
 
         .role-drawer-header {
@@ -2007,7 +1818,7 @@
         .server-item.active {
             opacity: 1;
             color: #1890ff;
-            background: #e6f7ff;
+            background: var(--theme-auth-bg, #E6F7FF);
             border-color: #1890ff;
             font-weight: 600;
         }
@@ -2044,7 +1855,7 @@
 
         .character-item.selected {
             border-color: #1890ff;
-            background: #e6f7ff;
+            background: var(--theme-auth-bg, #E6F7FF);
         }
 
         .character-name {
@@ -2315,7 +2126,30 @@
             font-size: 18px;
             color: #999;
         }
+
+        /* ── 主题颜色 CSS 变量 ───────────────────────────── */
+        :root {
+            --theme-page-bg:     #F5F7FA;
+            --theme-nav-bg:      #FFFFFF;
+            --theme-notice-bg:   #FFF7E6;
+            --theme-auth-bg:     #E6F7FF;
+            --theme-recharge-bg: #FFFFFF;
+            --theme-footer-bg:   #FFFFFF;
+            --theme-modal-bg:    #FFFFFF;
+            --theme-drawer-bg:   #FFFFFF;
+        }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        if (typeof mermaid !== 'undefined') {
+          mermaid.initialize({ startOnLoad: false, theme: 'default',
+            flowchart: { curve: 'basis', padding: 12 },
+            themeVariables: { fontSize: '13px', primaryColor: '#ecf5ff', primaryBorderColor: '#409eff', lineColor: '#606266', secondaryColor: '#f5f7fa' }
+          });
+        }
+      });
+    </script>
 </head>
 <body>
     <!-- 登录弹窗 -->
@@ -2496,7 +2330,7 @@
             <button class="modal-close" onclick="closeModal('giftDetailModal')">✕</button>
             <div class="gift-detail-header">
                 <div class="gift-detail-image">
-                    <img src="libao.png" alt="礼包" id="giftDetailMainImage">
+                    <img src="../images/libao.png" alt="礼包" id="giftDetailMainImage">
                 </div>
                 <div class="gift-detail-name" id="giftDetailName">夏日钓鱼648礼包</div>
                 <div class="gift-detail-price" id="giftDetailPrice">¥648</div>
@@ -2558,7 +2392,7 @@
         <button class="drawer-close" onclick="closeDrawer()">✕</button>
         <div class="drawer-content">
             <h3 class="summary-title">订单确认</h3>
-            <div class="summary-item" id="drawerRoleInfo" style="display: none; background: #e6f7ff; padding: 10px; border-radius: 6px; margin-bottom: 12px;">
+            <div class="summary-item" id="drawerRoleInfo" style="display: none; background: var(--theme-auth-bg, #E6F7FF); padding: 10px; border-radius: 6px; margin-bottom: 12px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <div style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 2px;" id="drawerRoleName">剑圣</div>
@@ -2601,11 +2435,11 @@
                 <div class="payment-method-label">支付方式</div>
                 <div class="payment-options">
                     <div class="payment-option selected" onclick="selectPayment('wechat')">
-                        <div class="payment-icon"><img src="微信支付.png" alt="微信" style="width: 32px; height: 32px;"></div>
+                        <div class="payment-icon"><img src="../images/微信支付.png" alt="微信" style="width: 32px; height: 32px;"></div>
                         <div>微信支付</div>
                     </div>
                     <div class="payment-option" onclick="selectPayment('alipay')">
-                        <div class="payment-icon"><img src="支付宝支付.png" alt="支付宝" style="width: 32px; height: 32px;"></div>
+                        <div class="payment-icon"><img src="../images/支付宝支付.png" alt="支付宝" style="width: 32px; height: 32px;"></div>
                         <div>支付宝</div>
                     </div>
                 </div>
@@ -2623,7 +2457,7 @@
     <!-- 头部 -->
     <div class="header">
         <div class="logo">
-            <img src="gameicon.png" alt="游戏图标" class="game-icon">
+            <img src="../images/gameicon.png" alt="游戏图标" class="game-icon">
             <span>官方充值中心</span>
         </div>
         <div class="header-right">
@@ -2642,7 +2476,7 @@
 
     <!-- Banner -->
     <div class="banner">
-        <img src="banner.jpg" alt="充值活动" class="banner-image">
+        <img src="../images/banner.jpg" alt="充值活动" class="banner-image">
         <div class="banner-dots">
             <div class="banner-dot active"></div>
             <div class="banner-dot"></div>
@@ -2679,71 +2513,68 @@
                 <div class="tier-grid">
                     <div class="tier-card" onclick="selectTier(1)">
                         <div class="tier-points-top">赠送600积分</div>
-                        <div class="tier-content">
-                            <div class="tier-token-group">
-                                <img src="daibi.png" alt="代币" class="tier-main-icon">
-                                <div class="tier-amount">60</div>
-                            </div>
+                        <div class="tier-item-img-wrap">
+                            <img src="../images/充值项图片.png" alt="充值项" class="tier-item-img">
+                        </div>
+                        <div class="tier-amount-row">
+                            <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                            <span class="tier-amount">60</span>
                         </div>
                         <div class="tier-price-bottom">¥6</div>
                     </div>
                     <div class="tier-card" onclick="selectTier(2)">
                         <div class="tier-points-top">赠送3000积分</div>
-                        <div class="tier-content">
-                            <div class="tier-token-group">
-                                <img src="daibi.png" alt="代币" class="tier-main-icon">
-                                <div class="tier-amount">300</div>
-                            </div>
+                        <div class="tier-item-img-wrap">
+                            <img src="../images/充值项图片.png" alt="充值项" class="tier-item-img">
+                        </div>
+                        <div class="tier-amount-row">
+                            <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                            <span class="tier-amount">300</span>
                             <span class="tier-plus">+</span>
-                            <div class="tier-bonus-group">
-                                <img src="zs.png" alt="赠送" class="tier-bonus-icon">
-                                <span class="tier-bonus">30</span>
-                            </div>
+                            <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                            <span class="tier-bonus">30</span>
                         </div>
                         <div class="tier-price-bottom">¥30</div>
                     </div>
                     <div class="tier-card" onclick="selectTier(3)">
                         <div class="tier-points-top">赠送9800积分</div>
-                        <div class="tier-content">
-                            <div class="tier-token-group">
-                                <img src="daibi.png" alt="代币" class="tier-main-icon">
-                                <div class="tier-amount">980</div>
-                            </div>
+                        <div class="tier-item-img-wrap">
+                            <img src="../images/充值项图片.png" alt="充值项" class="tier-item-img">
+                        </div>
+                        <div class="tier-amount-row">
+                            <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                            <span class="tier-amount">980</span>
                             <span class="tier-plus">+</span>
-                            <div class="tier-bonus-group">
-                                <img src="zs.png" alt="赠送" class="tier-bonus-icon">
-                                <span class="tier-bonus">196</span>
-                            </div>
+                            <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                            <span class="tier-bonus">196</span>
                         </div>
                         <div class="tier-price-bottom">¥98</div>
                     </div>
                     <div class="tier-card" onclick="selectTier(4)">
                         <div class="tier-points-top">赠送32800积分</div>
-                        <div class="tier-content">
-                            <div class="tier-token-group">
-                                <img src="daibi.png" alt="代币" class="tier-main-icon">
-                                <div class="tier-amount">3280</div>
-                            </div>
+                        <div class="tier-item-img-wrap">
+                            <img src="../images/充值项图片.png" alt="充值项" class="tier-item-img">
+                        </div>
+                        <div class="tier-amount-row">
+                            <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                            <span class="tier-amount">3280</span>
                             <span class="tier-plus">+</span>
-                            <div class="tier-bonus-group">
-                                <img src="zs.png" alt="赠送" class="tier-bonus-icon">
-                                <span class="tier-bonus">984</span>
-                            </div>
+                            <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                            <span class="tier-bonus">984</span>
                         </div>
                         <div class="tier-price-bottom">¥328</div>
                     </div>
                     <div class="tier-card" onclick="selectTier(5)">
                         <div class="tier-points-top">赠送64800积分</div>
-                        <div class="tier-content">
-                            <div class="tier-token-group">
-                                <img src="daibi.png" alt="代币" class="tier-main-icon">
-                                <div class="tier-amount">6480</div>
-                            </div>
+                        <div class="tier-item-img-wrap">
+                            <img src="../images/充值项图片.png" alt="充值项" class="tier-item-img">
+                        </div>
+                        <div class="tier-amount-row">
+                            <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                            <span class="tier-amount">6480</span>
                             <span class="tier-plus">+</span>
-                            <div class="tier-bonus-group">
-                                <img src="zs.png" alt="赠送" class="tier-bonus-icon">
-                                <span class="tier-bonus">2592</span>
-                            </div>
+                            <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                            <span class="tier-bonus">2592</span>
                         </div>
                         <div class="tier-price-bottom">¥648</div>
                     </div>
@@ -2757,7 +2588,7 @@
                         <div class="gift-points-badge">赠送64800积分</div>
                         <div class="gift-main">
                             <div class="gift-left" onclick="event.stopPropagation(); showGiftDetail(1)">
-                                <img src="libao.png" alt="礼包">
+                                <img src="../images/libao.png" alt="礼包">
                             </div>
                             <div class="gift-middle">
                                 <div class="gift-name">夏日钓鱼648礼包</div>
@@ -2777,7 +2608,7 @@
                         <div class="gift-points-badge">赠送50000积分</div>
                         <div class="gift-main">
                             <div class="gift-left" onclick="event.stopPropagation(); showGiftDetail(2)">
-                                <img src="libao.png" alt="礼包">
+                                <img src="../images/libao.png" alt="礼包">
                             </div>
                             <div class="gift-middle">
                                 <div class="gift-name">夏日钓鱼500礼包</div>
@@ -2797,7 +2628,7 @@
                         <div class="gift-points-badge">赠送9800积分</div>
                         <div class="gift-main">
                             <div class="gift-left" onclick="event.stopPropagation(); showGiftDetail(3)">
-                                <img src="libao.png" alt="礼包">
+                                <img src="../images/libao.png" alt="礼包">
                             </div>
                             <div class="gift-middle">
                                 <div class="gift-name">新手礼包</div>
@@ -2817,7 +2648,7 @@
                         <div class="gift-points-badge">赠送3000积分</div>
                         <div class="gift-main">
                             <div class="gift-left" onclick="event.stopPropagation(); showGiftDetail(4)">
-                                <img src="libao.png" alt="礼包">
+                                <img src="../images/libao.png" alt="礼包">
                             </div>
                             <div class="gift-middle">
                                 <div class="gift-name">月卡礼包</div>
@@ -2859,7 +2690,7 @@
                     <div class="mall-item-card">
                         <div class="mall-item-main">
                             <div class="mall-item-left">
-                                <img src="libao.png" alt="商品">
+                                <img src="../images/libao.png" alt="商品">
                             </div>
                             <div class="mall-item-middle">
                                 <div class="mall-item-name">稀有装备礼包</div>
@@ -2879,7 +2710,7 @@
                     <div class="mall-item-card">
                         <div class="mall-item-main">
                             <div class="mall-item-left">
-                                <img src="libao.png" alt="商品">
+                                <img src="../images/libao.png" alt="商品">
                             </div>
                             <div class="mall-item-middle">
                                 <div class="mall-item-name">经验药水礼包</div>
@@ -2899,7 +2730,7 @@
                     <div class="mall-item-card">
                         <div class="mall-item-main">
                             <div class="mall-item-left">
-                                <img src="libao.png" alt="商品">
+                                <img src="../images/libao.png" alt="商品">
                             </div>
                             <div class="mall-item-middle">
                                 <div class="mall-item-name">传说宝箱</div>
@@ -2919,7 +2750,7 @@
                     <div class="mall-item-card">
                         <div class="mall-item-main">
                             <div class="mall-item-left">
-                                <img src="libao.png" alt="商品">
+                                <img src="../images/libao.png" alt="商品">
                             </div>
                             <div class="mall-item-middle">
                                 <div class="mall-item-name">材料包</div>
@@ -2942,7 +2773,7 @@
                     <div class="mall-item-card">
                         <div class="mall-item-main">
                             <div class="mall-item-left">
-                                <img src="libao.png" alt="商品">
+                                <img src="../images/libao.png" alt="商品">
                             </div>
                             <div class="mall-item-middle">
                                 <div class="mall-item-name">稀有装备礼包</div>
@@ -2962,7 +2793,7 @@
                     <div class="mall-item-card">
                         <div class="mall-item-main">
                             <div class="mall-item-left">
-                                <img src="libao.png" alt="商品">
+                                <img src="../images/libao.png" alt="商品">
                             </div>
                             <div class="mall-item-middle">
                                 <div class="mall-item-name">经验药水礼包</div>
@@ -2982,7 +2813,7 @@
                     <div class="mall-item-card">
                         <div class="mall-item-main">
                             <div class="mall-item-left">
-                                <img src="libao.png" alt="商品">
+                                <img src="../images/libao.png" alt="商品">
                             </div>
                             <div class="mall-item-middle">
                                 <div class="mall-item-name">材料包</div>
@@ -3086,56 +2917,56 @@
                             <div class="wheel-divider"></div>
                             <div class="wheel-item">
                                 <div class="wheel-item-content">
-                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <img src="../images/libao.png" alt="奖品" class="wheel-item-icon">
                                     <div class="wheel-item-name">稀有武器</div>
                                     <div class="wheel-item-count">×1</div>
                                 </div>
                             </div>
                             <div class="wheel-item">
                                 <div class="wheel-item-content">
-                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <img src="../images/libao.png" alt="奖品" class="wheel-item-icon">
                                     <div class="wheel-item-name">金币</div>
                                     <div class="wheel-item-count">×5000</div>
                                 </div>
                             </div>
                             <div class="wheel-item">
                                 <div class="wheel-item-content">
-                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <img src="../images/libao.png" alt="奖品" class="wheel-item-icon">
                                     <div class="wheel-item-name">经验药水</div>
                                     <div class="wheel-item-count">×3</div>
                                 </div>
                             </div>
                             <div class="wheel-item">
                                 <div class="wheel-item-content">
-                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <img src="../images/libao.png" alt="奖品" class="wheel-item-icon">
                                     <div class="wheel-item-name">强化石</div>
                                     <div class="wheel-item-count">×10</div>
                                 </div>
                             </div>
                             <div class="wheel-item">
                                 <div class="wheel-item-content">
-                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <img src="../images/libao.png" alt="奖品" class="wheel-item-icon">
                                     <div class="wheel-item-name">传说装备</div>
                                     <div class="wheel-item-count">×1</div>
                                 </div>
                             </div>
                             <div class="wheel-item">
                                 <div class="wheel-item-content">
-                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <img src="../images/libao.png" alt="奖品" class="wheel-item-icon">
                                     <div class="wheel-item-name">材料包</div>
                                     <div class="wheel-item-count">×5</div>
                                 </div>
                             </div>
                             <div class="wheel-item">
                                 <div class="wheel-item-content">
-                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <img src="../images/libao.png" alt="奖品" class="wheel-item-icon">
                                     <div class="wheel-item-name">宝石</div>
                                     <div class="wheel-item-count">×20</div>
                                 </div>
                             </div>
                             <div class="wheel-item">
                                 <div class="wheel-item-content">
-                                    <img src="libao.png" alt="奖品" class="wheel-item-icon">
+                                    <img src="../images/libao.png" alt="奖品" class="wheel-item-icon">
                                     <div class="wheel-item-name">代币</div>
                                     <div class="wheel-item-count">×100</div>
                                 </div>
@@ -3169,7 +3000,7 @@
                     </div>
 
                     <div class="avatar-image-wrapper">
-                        <img src="libao.png" alt="头像框" class="avatar-image">
+                        <img src="../images/libao.png" alt="头像框" class="avatar-image">
                     </div>
 
                     <button class="avatar-claim-btn" id="avatarClaimBtn" disabled onclick="claimAvatarReward()">
@@ -3198,7 +3029,7 @@
                     <div class="cumulative-card available">
                         <div class="cumulative-main">
                             <div class="cumulative-left">
-                                <img src="libao.png" alt="礼包">
+                                <img src="../images/libao.png" alt="礼包">
                             </div>
                             <div class="cumulative-middle">
                                 <div class="cumulative-name">累充礼包I</div>
@@ -3227,7 +3058,7 @@
                     <div class="cumulative-card">
                         <div class="cumulative-main">
                             <div class="cumulative-left">
-                                <img src="libao.png" alt="礼包">
+                                <img src="../images/libao.png" alt="礼包">
                             </div>
                             <div class="cumulative-middle">
                                 <div class="cumulative-name">累充礼包II</div>
@@ -3256,7 +3087,7 @@
                     <div class="cumulative-card completed">
                         <div class="cumulative-main">
                             <div class="cumulative-left">
-                                <img src="libao.png" alt="礼包">
+                                <img src="../images/libao.png" alt="礼包">
                             </div>
                             <div class="cumulative-middle">
                                 <div class="cumulative-name">累充礼包III</div>
@@ -3285,7 +3116,7 @@
                     <div class="cumulative-card">
                         <div class="cumulative-main">
                             <div class="cumulative-left">
-                                <img src="libao.png" alt="礼包">
+                                <img src="../images/libao.png" alt="礼包">
                             </div>
                             <div class="cumulative-middle">
                                 <div class="cumulative-name">累充礼包IV</div>
@@ -4162,12 +3993,12 @@
                 price: 648,
                 time: '2025-08-02 至 2025-09-09',
                 items: [
-                    { name: '代币', count: '×6480', image: 'daibi.png' },
-                    { name: '专属道具', count: '×5', image: 'libao.png' },
-                    { name: '稀有材料', count: '×10', image: 'libao.png' },
-                    { name: '金币', count: '×50000', image: 'libao.png' },
-                    { name: '经验药水', count: '×20', image: 'libao.png' },
-                    { name: '强化石', count: '×15', image: 'libao.png' }
+                    { name: '代币', count: '×6480', image: 'images/daibi.png' },
+                    { name: '专属道具', count: '×5', image: 'images/libao.png' },
+                    { name: '稀有材料', count: '×10', image: 'images/libao.png' },
+                    { name: '金币', count: '×50000', image: 'images/libao.png' },
+                    { name: '经验药水', count: '×20', image: 'images/libao.png' },
+                    { name: '强化石', count: '×15', image: 'images/libao.png' }
                 ]
             },
             2: {
@@ -4175,11 +4006,11 @@
                 price: 500,
                 time: '2025-08-02 至 2025-09-09',
                 items: [
-                    { name: '代币', count: '×5000', image: 'daibi.png' },
-                    { name: '稀有道具', count: '×3', image: 'libao.png' },
-                    { name: '材料', count: '×8', image: 'libao.png' },
-                    { name: '金币', count: '×30000', image: 'libao.png' },
-                    { name: '经验药水', count: '×10', image: 'libao.png' }
+                    { name: '代币', count: '×5000', image: 'images/daibi.png' },
+                    { name: '稀有道具', count: '×3', image: 'images/libao.png' },
+                    { name: '材料', count: '×8', image: 'images/libao.png' },
+                    { name: '金币', count: '×30000', image: 'images/libao.png' },
+                    { name: '经验药水', count: '×10', image: 'images/libao.png' }
                 ]
             },
             3: {
@@ -4187,10 +4018,10 @@
                 price: 98,
                 time: '永久有效',
                 items: [
-                    { name: '代币', count: '×980', image: 'daibi.png' },
-                    { name: '新手装备', count: '×1', image: 'libao.png' },
-                    { name: '经验药水', count: '×5', image: 'libao.png' },
-                    { name: '金币', count: '×10000', image: 'libao.png' }
+                    { name: '代币', count: '×980', image: 'images/daibi.png' },
+                    { name: '新手装备', count: '×1', image: 'images/libao.png' },
+                    { name: '经验药水', count: '×5', image: 'images/libao.png' },
+                    { name: '金币', count: '×10000', image: 'images/libao.png' }
                 ]
             },
             4: {
@@ -4198,9 +4029,9 @@
                 price: 30,
                 time: '30天有效期',
                 items: [
-                    { name: '每日代币', count: '×100', image: 'daibi.png' },
-                    { name: '连续天数', count: '×30天', image: 'libao.png' },
-                    { name: '总计代币', count: '×3000', image: 'daibi.png' }
+                    { name: '每日代币', count: '×100', image: 'images/daibi.png' },
+                    { name: '连续天数', count: '×30天', image: 'images/libao.png' },
+                    { name: '总计代币', count: '×3000', image: 'images/daibi.png' }
                 ]
             }
         };
@@ -4258,6 +4089,22 @@
 
     <!-- PRD Float Button -->
     <button id="prdFloatBtn" onclick="openPrdPanel()" title="查看PRD文档">PRD</button>
+    <script>if (window !== window.top) { document.getElementById('prdFloatBtn').style.display = 'none'; }</script>
+    <script>
+    window.addEventListener('message', function(e) {
+        var d = e.data;
+        if (!d || d.type !== 'THEME_UPDATE') return;
+        var r = document.documentElement.style;
+        if (d.pageBackground  !== undefined) r.setProperty('--theme-page-bg',     d.pageBackground);
+        if (d.navBar          !== undefined) r.setProperty('--theme-nav-bg',       d.navBar);
+        if (d.noticeBg        !== undefined) r.setProperty('--theme-notice-bg',    d.noticeBg);
+        if (d.authModule      !== undefined) r.setProperty('--theme-auth-bg',      d.authModule);
+        if (d.rechargeModule  !== undefined) r.setProperty('--theme-recharge-bg',  d.rechargeModule);
+        if (d.footer          !== undefined) r.setProperty('--theme-footer-bg',    d.footer);
+        if (d.modalBg         !== undefined) r.setProperty('--theme-modal-bg',     d.modalBg);
+        if (d.drawerBg        !== undefined) r.setProperty('--theme-drawer-bg',    d.drawerBg);
+    });
+    </script>
 
     <!-- PRD 文档侧面板 -->
     <div id="prdPanel">
@@ -4304,6 +4151,9 @@
         }
         #prdFloatBtn:hover { background: #531dab; }
 
+        
+        .prd-mermaid-wrap { text-align:center; background:#fafbfc; border:1px solid #e4e7ed; border-radius:8px; padding:20px; margin:16px 0; overflow-x:auto; }
+        .prd-mermaid-wrap svg { max-width:100%; height:auto; }
         #prdPanel {
             display: none;
             position: fixed;
@@ -4472,14 +4322,20 @@
 
     <script>
         var prdVersions = [
-        {label:"v1.0 (最新)",date:"2026-04-01",content:"# 游戏充值中心系统（国内版）- 产品需求文档 (PRD)\r\n\r\n## 1. 产品概述\r\n\r\n### 1.1 产品定位\r\n游戏充值中心（国内版）是一个面向中国大陆玩家的在线充值服务平台，为玩家提供便捷、安全的游戏代币充值和道具礼包购买服务，同时提供积分商城和活动中心等增值服务。\r\n\r\n### 1.2 产品目标\r\n- **提升充值转化率**：简化充值流程，支持多种登录方式，降低用户操作门槛\r\n- **增加用户粘性**：通过积分商城、活动中心等功能提升用户留存和复购率\r\n- **提高用户LTV**：通过累充活动、限时礼包等营销手段提升用户生命周期价值\r\n- **保障交易安全**：集成微信支付、支付宝，确保交易安全可靠\r\n\r\n### 1.3 产品价值\r\n- **对玩家**：提供便捷的充值渠道，享受充值优惠和活动奖励，积分可兑换游戏道具\r\n- **对运营方**：提升充值收入，降低运营成本，提高用户LTV，增强用户粘性\r\n- **对游戏方**：增强游戏变现能力，提升玩家付费意愿，延长游戏生命周期\r\n\r\n---\r\n\r\n## 2. 用户角色\r\n\r\n### 2.1 新手玩家\r\n- **特征**：首次充值，对充值流程不熟悉，对游戏内容了解有限\r\n- **需求**：简单易懂的充值流程、新手礼包、充值说明、客服支持\r\n- **痛点**：不知道如何充值、不了解充值优惠规则、担心充值安全\r\n- **解决方案**：提供新手礼包、底部充值说明、添加到桌面引导\r\n\r\n### 2.2 普通玩家\r\n- **特征**：偶尔充值，单次充值金额中等，对价格敏感\r\n- **需求**：快速充值、优惠活动、积分兑换、充值记录查询\r\n- **痛点**：充值流程复杂、优惠力度不够、积分使用不便\r\n- **解决方案**：简化充值流程、提供限时礼包、积分商城、活动中心\r\n\r\n### 2.3 高价值玩家\r\n- **特征**：充值频繁，单次充值金额高，对游戏投入度高\r\n- **需求**：VIP特权、专属优惠、批量购买、充值排行榜\r\n- **痛点**：缺少专属服务、优惠力度不够、充值上限限制\r\n- **解决方案**：提供高额档位、累充活动、批量购买功能\r\n\r\n### 2.4 活动玩家\r\n- **特征**：喜欢参与活动，对积分和奖励敏感\r\n- **需求**：丰富的活动类型、积分兑换、转盘抽奖、累充奖励\r\n- **痛点**：活动单一、积分获取困难、奖励不吸引人\r\n- **解决方案**：活动中心（转盘抽奖、充值送头像框、累充活动）、积分商城\r\n\r\n---\r\n\r\n## 3. 功能需求\r\n\r\n### 3.1 登录认证模块\r\n\r\n#### 3.1.1 手机号登录\r\n**功能描述**：使用手机号+验证码登录，适合首次登录或忘记密码的用户\r\n\r\n**流程**：\r\n1. 输入手机号\r\n2. 点击\"获取验证码\"按钮\r\n3. 输入验证码\r\n4. 勾选用户协议、隐私政策、儿童隐私政策\r\n5. 点击\"登录\"按钮\r\n6. 选择账号（如果该手机号绑定多个账号）\r\n7. 选择服务器和角色\r\n\r\n**交互规则**：\r\n- 验证码60秒倒计时，倒计时期间按钮禁用\r\n- 倒计时结束后显示\"重新发送\"\r\n- 验证码输入错误3次后锁定5分钟\r\n- 必须勾选所有协议才能登录\r\n- 测试验证码：123456\r\n\r\n**优先级**：P0\r\n\r\n#### 3.1.2 账密登录\r\n**功能描述**：使用账号+密码登录，适合老用户快速登录\r\n\r\n**流程**：\r\n1. 输入账号\r\n2. 输入密码\r\n3. 勾选用户协议、隐私政策、儿童隐私政策\r\n4. 点击\"登录\"按钮\r\n5. 选择服务器和角色\r\n\r\n**交互规则**：\r\n- 密码输入错误3次后锁定5分钟\r\n- 必须勾选所有协议才能登录\r\n- 测试账号：test，密码：123456\r\n\r\n**优先级**：P0\r\n\r\n#### 3.1.3 角色ID验证\r\n**功能描述**：直接输入角色ID验证登录，适合快速充值场景\r\n\r\n**流程**：\r\n1. 输入角色ID\r\n2. 点击\"验证\"按钮\r\n3. 验证成功，显示角色信息\r\n\r\n**交互规则**：\r\n- 验证失败提示\"角色ID不存在\"\r\n- 验证成功后显示服务器名称、角色名称、积分余额\r\n- 测试角色ID：10001、10002、10003\r\n\r\n**优先级**：P0\r\n\r\n#### 3.1.4 协议勾选\r\n**功能描述**：用户必须勾选协议才能登录\r\n\r\n**协议列表**：\r\n- 用户协议\r\n- 隐私政策\r\n- 儿童隐私政策\r\n\r\n**交互规则**：\r\n- 协议文本为蓝色链接，点击弹出协议详情\r\n- 必须勾选所有协议才能点击登录按钮\r\n- 未勾选时登录按钮禁用\r\n\r\n**优先级**：P0\r\n\r\n### 3.2 角色管理模块\r\n\r\n#### 3.2.1 角色选择抽屉\r\n**功能描述**：手机号/账密登录后，选择服务器和角色\r\n\r\n**布局**：\r\n- 左侧：服务器列表（垂直滚动）\r\n- 右侧：角色列表（垂直滚动）\r\n\r\n**服务器列表**：\r\n- 一区-艾泽拉斯\r\n- 二区-洛丹伦\r\n- 三区-暴风城\r\n- 四区-铁炉堡\r\n\r\n**角色信息**：\r\n- 角色名称\r\n- 角色等级\r\n\r\n**交互规则**：\r\n- 点击服务器切换右侧角色列表\r\n- 当前选中服务器高亮显示（蓝色背景）\r\n- 点击角色选中，关闭抽屉\r\n- 抽屉从底部弹出，支持下拉关闭\r\n\r\n**优先级**：P0\r\n\r\n#### 3.2.2 角色信息展示\r\n**功能描述**：展示当前登录角色的基本信息\r\n\r\n**展示内容**：\r\n- 角色名称\r\n- 服务器名称\r\n- 积分余额\r\n\r\n**切换按钮**：\r\n- 手机号/账密登录：显示\"切换角色\"按钮\r\n- 角色ID验证：显示\"重新验证\"按钮\r\n\r\n**交互规则**：\r\n- 点击\"切换角色\"打开角色选择抽屉\r\n- 点击\"重新验证\"清空角色信息，返回角色ID输入状态\r\n\r\n**优先级**：P0\r\n\r\n### 3.3 充值模块\r\n\r\n#### 3.3.1 代币充值\r\n**功能描述**：购买游戏代币，支持批量购买\r\n\r\n**档位配置**：\r\n| 档位 | 价格 | 代币 | 赠送 | 积分 | 赠送比例 |\r\n|-----|------|------|------|------|---------|\r\n| 1 | ¥6 | 60 | 0 | 600 | 0% |\r\n| 2 | ¥30 | 300 | 30 | 3000 | 10% |\r\n| 3 | ¥98 | 980 | 196 | 9800 | 20% |\r\n| 4 | ¥328 | 3280 | 984 | 32800 | 30% |\r\n| 5 | ¥648 | 6480 | 2592 | 64800 | 40% |\r\n\r\n**卡片布局**：\r\n- 顶部：积分徽章（紫色渐变）\r\n- 中间：代币图标 + 代币数量 + 赠送图标 + 赠送数量\r\n- 底部：价格 + 货币单位\r\n\r\n**交互规则**：\r\n- 点击档位卡片选中，再次点击取消选中\r\n- 选中后边框变蓝，背景浅蓝色\r\n- 选中后弹出订单抽屉\r\n- 支持批量购买，数量范围1-99\r\n- 批量购买时，代币、赠送、积分按数量倍增\r\n\r\n**优先级**：P0\r\n\r\n#### 3.3.2 限时礼包\r\n**功能描述**：购买道具礼包，获得游戏道具和代币\r\n\r\n**礼包配置**：\r\n| 礼包名称 | 价格 | 内容 | 限购 | 积分 | 活动时间 |\r\n|---------|------|------|------|------|---------|\r\n| 夏日钓鱼648礼包 | ¥648 | 6480代币、专属道具×5、稀有材料×10、金币×50000、经验药水×20、强化石×15 | 3次 | 64800 | 2025-08-02 至 2025-09-09 |\r\n| 夏日钓鱼500礼包 | ¥500 | 5000代币、稀有道具×3、材料×8、金币×30000、经验药水×10 | 5次 | 50000 | 2025-08-02 至 2025-09-09 |\r\n| 新手礼包 | ¥98 | 980代币、新手装备×1、经验药水×5、金币×10000 | 1次 | 9800 | 长期 |\r\n| 月卡礼包 | ¥30 | 每日领取100代币，连续30天 | 不限 | 3000 | 长期 |\r\n\r\n**卡片布局**：\r\n- 礼包图片（120×120px）\r\n- 礼包名称\r\n- 礼包价格\r\n- 限购信息\r\n- 活动时间\r\n\r\n**交互规则**：\r\n- 点击礼包卡片选中\r\n- 点击礼包图片弹出详情弹窗\r\n- 选中后弹出订单抽屉\r\n- 支持批量购买，需校验限购次数\r\n\r\n**优先级**：P0\r\n\r\n#### 3.3.3 礼包详情弹窗\r\n**功能描述**：展示礼包内所有物品的详细信息\r\n\r\n**展示内容**：\r\n- 礼包主图（大图）\r\n- 礼包名称\r\n- 礼包价格\r\n- 活动时间\r\n- 礼包物品列表（3列网格布局）\r\n  - 物品图片\r\n  - 物品名称\r\n  - 物品数量\r\n\r\n**交互规则**：\r\n- 点击礼包图片弹出\r\n- 点击遮罩层或关闭按钮关闭\r\n- 点击\"立即购买\"按钮关闭弹窗，触发礼包购买\r\n\r\n**优先级**：P1\r\n\r\n### 3.4 支付模块\r\n\r\n#### 3.4.1 订单抽屉\r\n**功能描述**：展示订单详情，确认后支付\r\n\r\n**展示内容**：\r\n- 角色信息（角色名称、服务器）\r\n- 代币数量（代币充值）\r\n- 赠送代币（代币充值）\r\n- 礼包名称（礼包购买）\r\n- 礼包内容（礼包购买）\r\n- 赠送积分\r\n- 购买数量（支持增减）\r\n- 支付方式选择\r\n- 总金额\r\n\r\n**交互规则**：\r\n- 从底部弹出，支持下拉关闭\r\n- 购买数量：点击+/-按钮调整，范围1-99\r\n- 切换角色：关闭抽屉，返回角色选择\r\n- 立即支付：选择支付方式后才可点击\r\n\r\n**优先级**：P0\r\n\r\n#### 3.4.2 支付方式\r\n**功能描述**：选择支付方式完成支付\r\n\r\n**支付选项**：\r\n- 微信支付：显示微信支付图标\r\n- 支付宝：显示支付宝图标\r\n\r\n**交互规则**：\r\n- 点击选中，再次点击取消选中\r\n- 选中后边框变蓝，背景浅蓝色\r\n- 必须选择支付方式才能点击\"立即支付\"按钮\r\n\r\n**优先级**：P0\r\n\r\n### 3.5 积分商城模块\r\n\r\n#### 3.5.1 兑换池\r\n**功能描述**：使用积分兑换游戏道具\r\n\r\n**商品列表**：\r\n| 商品名称 | 积分 | 限兑 | 库存 | 内容 |\r\n|---------|------|------|------|------|\r\n| 稀有装备礼包 | 5000 | 3次 | 50 | 稀有武器×1、防具×1、强化石×10 |\r\n| 经验药水礼包 | 2000 | 5次 | 100 | 大型经验药水×5、中型经验药水×10 |\r\n| 传说宝箱 | 10000 | 1次 | 10 | 传说装备×1、稀有材料×20、金币×50000 |\r\n| 材料包 | 1000 | 不限 | 999 | 铁矿石×50、木材×50、布料×30 |\r\n\r\n**筛选功能**：\r\n- 默认：显示所有商品\r\n- 可兑换：积分足够且未达限兑次数\r\n\r\n**交互规则**：\r\n- 点击\"兑换\"按钮确认兑换\r\n- 兑换成功后扣除积分\r\n- 商品发放至游戏邮箱\r\n- 兑换记录保存到\"我的兑换\"\r\n\r\n**优先级**：P1\r\n\r\n#### 3.5.2 我的兑换\r\n**功能描述**：查看兑换记录\r\n\r\n**展示内容**：\r\n- 兑换时间\r\n- 活动名称\r\n- 消耗积分\r\n- 兑换物品\r\n- 兑换状态（兑换成功/待发放）\r\n\r\n**优先级**：P1\r\n\r\n#### 3.5.3 活动规则\r\n**功能描述**：展示积分商城的活动规则\r\n\r\n**规则内容**：\r\n- 兑换明细：积分获取方式、兑换限制\r\n- 奖励发放：发放时间、邮件保留期\r\n- 注意事项：退换政策、积分有效期\r\n\r\n**优先级**：P2\r\n\r\n### 3.6 活动中心模块\r\n\r\n#### 3.6.1 限时转盘\r\n**功能描述**：消耗积分抽奖，获得游戏道具\r\n\r\n**奖品列表**（8个奖品位）：\r\n- 稀有武器×1\r\n- 金币×5000\r\n- 经验药水×3\r\n- 强化石×10\r\n- 传说装备×1\r\n- 材料包×5\r\n- 宝石×20\r\n- 代币×100\r\n\r\n**抽奖方式**：\r\n- 免费抽奖：每日1次免费机会\r\n- 单次抽奖：消耗500积分\r\n- 抽奖10次：消耗5000积分\r\n\r\n**交互规则**：\r\n- 点击\"抽奖\"按钮开始旋转\r\n- 转盘旋转3秒后停止\r\n- 弹窗展示中奖结果\r\n- 奖品发放至游戏邮箱\r\n\r\n**喇叭播报**：\r\n- 滚动播报其他玩家中奖信息\r\n- 支持暂停（鼠标悬停）\r\n\r\n**优先级**：P1\r\n\r\n#### 3.6.2 充值送头像框\r\n**功能描述**：完成任意金额充值，领取专属头像框\r\n\r\n**活动规则**：\r\n- 完成任意金额充值即可领取\r\n- 每个账号仅可领取一次\r\n- 充值成功后等待3-5分钟刷新页面\r\n\r\n**按钮状态**：\r\n- 未充值：显示\"暂未充值，无法领取\"，禁用\r\n- 已充值未领取：显示\"立即领取\"，可点击\r\n- 已领取：显示\"已领取\"，禁用\r\n\r\n**交互规则**：\r\n- 点击\"立即领取\"按钮领取奖励\r\n- 头像框发放至游戏邮箱\r\n\r\n**优先级**：P1\r\n\r\n#### 3.6.3 累充活动\r\n**功能描述**：累计充值达标，领取奖励\r\n\r\n**奖励档位**：\r\n| 档位 | 累充金额 | 奖励内容 | 活动时间 |\r\n|-----|---------|---------|---------|\r\n| I | 100元 | 稀有武器×1、金币×10000、经验药水×5 | 2025-08-01 至 2025-09-30 |\r\n| II | 300元 | 传说装备×1、金币×30000、强化石×20 | 2025-08-01 至 2025-09-30 |\r\n| III | 500元 | 神话装备×1、金币×50000、宝石×50 | 2025-08-01 至 2025-09-30 |\r\n| IV | 1000元 | 至尊装备×1、金币×100000、专属称号×1 | 2025-08-01 至 2025-09-30 |\r\n\r\n**卡片状态**：\r\n- 未达成：显示\"前往充值\"按钮，进度条显示当前进度\r\n- 可领取：显示\"领取\"按钮，卡片高亮（蓝色边框）\r\n- 已领取：显示\"已领取\"按钮，禁用状态，卡片绿色背景\r\n\r\n**交互规则**：\r\n- 点击\"前往充值\"跳转到充值页面\r\n- 点击\"领取\"按钮领取奖励\r\n- 奖励发放至游戏邮箱\r\n\r\n**优先级**：P1\r\n\r\n### 3.7 其他功能\r\n\r\n#### 3.7.1 Banner轮播\r\n**功能描述**：展示活动Banner，支持轮播\r\n\r\n**配置**：\r\n- 高度：180px\r\n- 轮播点：底部居中显示\r\n- 自动轮播：3秒切换\r\n\r\n**交互规则**：\r\n- 点击轮播点切换Banner\r\n- 点击Banner跳转到活动页面\r\n\r\n**优先级**：P1\r\n\r\n#### 3.7.2 通知栏\r\n**功能描述**：滚动播报活动信息\r\n\r\n**配置**：\r\n- 样式：黄色渐变背景，左侧喇叭图标\r\n- 动画：从右向左滚动，20秒循环\r\n\r\n**交互规则**：\r\n- 点击关闭按钮隐藏通知栏\r\n- 鼠标悬停暂停滚动\r\n\r\n**优先级**：P2\r\n\r\n#### 3.7.3 添加到桌面\r\n**功能描述**：引导用户将网页添加到桌面\r\n\r\n**提示内容**：\r\n- 微信浏览器：点击右上角\"...\"菜单，选择\"添加到桌面\"\r\n- Safari：点击底部分享按钮，选择\"添加到主屏幕\"\r\n- Android：点击浏览器菜单，选择\"添加到主屏幕\"\r\n- 其他：显示通用操作方法\r\n\r\n**优先级**：P2\r\n\r\n#### 3.7.4 充值记录\r\n**功能描述**：查看充值记录\r\n\r\n**展示内容**：\r\n- 充值商品\r\n- 充值金额\r\n- 充值时间\r\n- 充值状态\r\n\r\n**交互规则**：\r\n- 点击用户头像下拉菜单中的\"充值记录\"查看\r\n\r\n**优先级**：P1\r\n\r\n#### 3.7.5 底部说明\r\n**功能描述**：展示充值相关说明\r\n\r\n**内容**：\r\n- 充值到账说明：充值成功后立即到账，特殊情况延迟5-10分钟\r\n- 售后服务：30分钟未到账联系客服，客服工作时间9:00-22:00\r\n- 温馨提示：确认角色和区服信息、充值后不支持退款、未成年人充值需监护人同意\r\n\r\n**优先级**：P2\r\n\r\n---\r\n\r\n## 4. 业务流程\r\n\r\n### 4.1 手机号登录充值流程\r\n\r\n```\r\n用户访问充值页面\r\n    ↓\r\n选择手机号登录\r\n    ↓\r\n输入手机号\r\n    ↓\r\n获取验证码\r\n    ↓\r\n输入验证码\r\n    ↓\r\n勾选协议\r\n    ↓\r\n点击登录\r\n    ↓\r\n选择账号（如有多个）\r\n    ↓\r\n选择服务器\r\n    ↓\r\n选择角色\r\n    ↓\r\n显示角色信息卡片\r\n    ↓\r\n选择充值类型（代币/礼包）\r\n    ↓\r\n选择档位/礼包\r\n    ↓\r\n[礼包] 点击图片查看详情\r\n    ↓\r\n订单抽屉弹出\r\n    ↓\r\n调整购买数量\r\n    ↓\r\n选择支付方式（微信/支付宝）\r\n    ↓\r\n确认订单信息\r\n    ↓\r\n点击立即支付\r\n    ↓\r\n跳转支付页面\r\n    ↓\r\n完成支付\r\n    ↓\r\n代币/道具到账\r\n    ↓\r\n积分到账\r\n```\r\n\r\n### 4.2 账密登录充值流程\r\n\r\n```\r\n用户访问充值页面\r\n    ↓\r\n选择账密登录\r\n    ↓\r\n输入账号密码\r\n    ↓\r\n勾选协议\r\n    ↓\r\n点击登录\r\n    ↓\r\n选择服务器\r\n    ↓\r\n选择角色\r\n    ↓\r\n显示角色信息卡片\r\n    ↓\r\n选择充值类型（代币/礼包）\r\n    ↓\r\n选择档位/礼包\r\n    ↓\r\n订单抽屉弹出\r\n    ↓\r\n调整购买数量\r\n    ↓\r\n选择支付方式\r\n    ↓\r\n确认订单信息\r\n    ↓\r\n点击立即支付\r\n    ↓\r\n跳转支付页面\r\n    ↓\r\n完成支付\r\n    ↓\r\n代币/道具到账\r\n    ↓\r\n积分到账\r\n```\r\n\r\n### 4.3 角色ID验证充值流程\r\n\r\n```\r\n用户访问充值页面\r\n    ↓\r\n选择角色ID验证\r\n    ↓\r\n输入角色ID\r\n    ↓\r\n点击验证\r\n    ↓\r\n验证成功，显示角色信息\r\n    ↓\r\n选择充值类型（代币/礼包）\r\n    ↓\r\n选择档位/礼包\r\n    ↓\r\n订单抽屉弹出\r\n    ↓\r\n调整购买数量\r\n    ↓\r\n选择支付方式\r\n    ↓\r\n确认订单信息\r\n    ↓\r\n点击立即支付\r\n    ↓\r\n跳转支付页面\r\n    ↓\r\n完成支付\r\n    ↓\r\n代币/道具到账\r\n    ↓\r\n积分到账\r\n```\r\n\r\n### 4.4 积分兑换流程\r\n\r\n```\r\n用户进入积分商城\r\n    ↓\r\n查看商品列表\r\n    ↓\r\n[可选] 筛选可兑换商品\r\n    ↓\r\n选择商品\r\n    ↓\r\n点击兑换按钮\r\n    ↓\r\n确认兑换\r\n    ↓\r\n扣除积分\r\n    ↓\r\n商品发放至游戏邮箱\r\n    ↓\r\n兑换记录保存\r\n```\r\n\r\n### 4.5 限时转盘抽奖流程\r\n\r\n```\r\n用户进入活动中心\r\n    ↓\r\n选择限时转盘\r\n    ↓\r\n[免费抽奖] 使用免费机会\r\n[积分抽奖] 消耗500积分\r\n[抽奖10次] 消耗5000积分\r\n    ↓\r\n转盘旋转\r\n    ↓\r\n展示中奖结果\r\n    ↓\r\n奖品发放至游戏邮箱\r\n```\r\n\r\n### 4.6 累充活动参与流程\r\n\r\n```\r\n用户累计充值\r\n    ↓\r\n进入活动中心\r\n    ↓\r\n选择累充活动\r\n    ↓\r\n查看当前进度\r\n    ↓\r\n[未达成] 前往充值\r\n[可领取] 点击领取按钮\r\n    ↓\r\n奖励发放至游戏邮箱\r\n```\r\n\r\n---\r\n\r\n## 5. 数据模型\r\n\r\n### 5.1 用户数据模型\r\n\r\n```javascript\r\nUser {\r\n  userId: string,           // 用户ID\r\n  phone: string,            // 手机号（手机号登录）\r\n  account: string,          // 账号（账密登录）\r\n  roleId: string,           // 角色ID\r\n  roleName: string,         // 角色名称\r\n  serverName: string,       // 服务器名称\r\n  points: number,           // 积分余额\r\n  loginMethod: string,      // 登录方式（phone/account/roleid）\r\n  createdAt: timestamp,     // 创建时间\r\n  lastLoginAt: timestamp    // 最后登录时间\r\n}\r\n```\r\n\r\n### 5.2 订单数据模型\r\n\r\n```javascript\r\nOrder {\r\n  orderId: string,          // 订单ID\r\n  userId: string,           // 用户ID\r\n  roleId: string,           // 角色ID\r\n  orderType: string,        // 订单类型（token/gift）\r\n  productId: string,        // 商品ID\r\n  productName: string,      // 商品名称\r\n  quantity: number,         // 购买数量\r\n  price: number,            // 单价（元）\r\n  totalPrice: number,       // 总价（元）\r\n  paymentMethod: string,    // 支付方式（wechat/alipay）\r\n  tokens: number,           // 代币数量\r\n  bonus: number,            // 赠送代币\r\n  points: number,           // 赠送积分\r\n  status: string,           // 订单状态（pending/paid/completed/failed）\r\n  createdAt: timestamp,     // 创建时间\r\n  paidAt: timestamp,        // 支付时间\r\n  completedAt: timestamp    // 完成时间\r\n}\r\n```\r\n\r\n### 5.3 代币档位数据模型\r\n\r\n```javascript\r\nTierData {\r\n  id: number,               // 档位ID\r\n  tokens: number,           // 代币数量\r\n  bonus: number,            // 赠送代币\r\n  price: number,            // 价格（元）\r\n  points: number            // 赠送积分\r\n}\r\n```\r\n\r\n### 5.4 礼包数据模型\r\n\r\n```javascript\r\nGiftPackage {\r\n  id: number,               // 礼包ID\r\n  name: string,             // 礼包名称\r\n  price: number,            // 价格（元）\r\n  items: array,             // 礼包内容\r\n  limit: string,            // 限购次数\r\n  points: number,           // 赠送积分\r\n  startTime: timestamp,     // 活动开始时间\r\n  endTime: timestamp        // 活动结束时间\r\n}\r\n\r\nGiftItem {\r\n  name: string,             // 物品名称\r\n  quantity: number,         // 物品数量\r\n  image: string             // 物品图片\r\n}\r\n```\r\n\r\n### 5.5 积分商品数据模型\r\n\r\n```javascript\r\nPointsProduct {\r\n  id: number,               // 商品ID\r\n  name: string,             // 商品名称\r\n  points: number,           // 所需积分\r\n  limit: string,            // 限兑次数\r\n  stock: number,            // 剩余库存\r\n  items: array              // 商品内容\r\n}\r\n```\r\n\r\n### 5.6 活动数据模型\r\n\r\n```javascript\r\nActivity {\r\n  id: string,               // 活动ID\r\n  type: string,             // 活动类型（wheel/avatar/cumulative）\r\n  name: string,             // 活动名称\r\n  startTime: timestamp,     // 开始时间\r\n  endTime: timestamp,       // 结束时间\r\n  status: string            // 活动状态（active/pending/ended）\r\n}\r\n\r\nCumulativeReward {\r\n  id: number,               // 奖励ID\r\n  threshold: number,        // 累充金额（元）\r\n  name: string,             // 奖励名称\r\n  items: array,             // 奖励内容\r\n  status: string            // 领取状态（available/claimed/locked）\r\n}\r\n```\r\n\r\n---\r\n\r\n## 6. 交互设计\r\n\r\n### 6.1 页面布局\r\n\r\n```\r\n+----------------------------------+\r\n|  Header（Logo + 添加到桌面 + 用户） |\r\n+----------------------------------+\r\n|  Banner（活动Banner轮播）          |\r\n+----------------------------------+\r\n|  通知栏（滚动播报）                 |\r\n+----------------------------------+\r\n|  角色信息卡片                      |\r\n|  （角色名称、服务器、积分余额）      |\r\n|  （切换角色/重新验证按钮）          |\r\n+----------------------------------+\r\n|  Tab切换（代币充值 / 限时礼包）      |\r\n+----------------------------------+\r\n|  档位/礼包列表（2列网格）           |\r\n+----------------------------------+\r\n|  底部说明                          |\r\n|  （充值到账说明、售后服务、温馨提示）|\r\n+----------------------------------+\r\n```\r\n\r\n### 6.2 交互规范\r\n\r\n#### 6.2.1 按钮交互\r\n- **点击反馈**：按钮点击时缩小至98%（transform: scale(0.98)）\r\n- **禁用状态**：灰色背景（#d9d9d9），不可点击\r\n- **加载状态**：显示loading图标，禁用点击\r\n- **按钮高度**：44px（符合iOS人机交互指南）\r\n\r\n#### 6.2.2 卡片交互\r\n- **选中状态**：蓝色边框（#1890ff），浅蓝色背景（#f0f7ff）\r\n- **悬停状态**：轻微阴影效果（box-shadow: 0 2px 8px rgba(0,0,0,0.1)）\r\n- **点击反馈**：缩小至98%\r\n\r\n#### 6.2.3 抽屉交互\r\n- **打开动画**：从底部滑入，300ms缓动（transition: transform 0.3s ease）\r\n- **关闭方式**：点击关闭按钮、点击遮罩层、下拉手势\r\n- **滚动行为**：内容超出时支持滚动\r\n\r\n#### 6.2.4 弹窗交互\r\n- **打开动画**：淡入 + 缩放，300ms\r\n- **关闭方式**：点击关闭按钮、点击遮罩层\r\n- **背景遮罩**：半透明黑色（rgba(0,0,0,0.5)）\r\n\r\n### 6.3 响应式设计\r\n\r\n#### 6.3.1 移动端适配\r\n- **最大宽度**：480px\r\n- **字体大小**：13px-20px\r\n- **按钮高度**：44px\r\n- **间距**：15px（卡片间距）、12px（元素间距）\r\n\r\n#### 6.3.2 横屏适配\r\n- 保持最大宽度480px\r\n- 内容居中显示\r\n\r\n---\r\n\r\n## 7. 非功能性需求\r\n\r\n### 7.1 性能要求\r\n- **页面加载时间**：首屏加载时间 < 2秒\r\n- **交互响应时间**：点击响应时间 < 100ms\r\n- **支付跳转时间**：支付页面跳转时间 < 1秒\r\n- **图片加载**：使用懒加载，优先加载首屏图片\r\n\r\n### 7.2 安全要求\r\n- **数据传输**：使用HTTPS加密传输\r\n- **支付安全**：集成官方支付SDK（微信JSAPI、支付宝H5），不存储支付密码\r\n- **用户隐私**：遵守《个人信息保护法》、《儿童个人信息网络保护规定》\r\n- **防刷单**：限制单用户单日充值次数和金额\r\n- **实名认证**：未成年人充值需实名认证和家长监护\r\n\r\n### 7.3 兼容性要求\r\n- **浏览器兼容**：Chrome、Safari、Firefox、Edge最新版本\r\n- **移动端兼容**：iOS 12+、Android 8+\r\n- **微信内置浏览器**：支持微信内打开和支付\r\n\r\n### 7.4 可用性要求\r\n- **系统可用性**：99.9%\r\n- **并发支持**：支持10000+并发用户\r\n- **数据备份**：每日自动备份，保留30天\r\n\r\n### 7.5 可维护性要求\r\n- **代码规范**：遵循ESLint规范\r\n- **文档完善**：API文档、部署文档、运维文档\r\n- **日志记录**：记录用户行为、错误日志、支付日志\r\n\r\n---\r\n\r\n## 8. 技术架构\r\n\r\n### 8.1 前端技术栈\r\n- **当前方案**：纯HTML + CSS + JavaScript\r\n- **推荐方案**：Vue 3 + TypeScript + Vite\r\n- **状态管理**：Pinia\r\n- **UI组件库**：Vant（移动端）\r\n- **HTTP客户端**：Axios\r\n- **支付SDK**：微信JSAPI、支付宝H5\r\n\r\n### 8.2 后端技术栈（建议）\r\n- **开发语言**：Node.js / Java / Go\r\n- **Web框架**：Express / Spring Boot / Gin\r\n- **数据库**：MySQL（订单数据）+ Redis（缓存）\r\n- **消息队列**：RabbitMQ / Kafka（订单处理）\r\n- **对象存储**：阿里云OSS（图片资源）\r\n\r\n### 8.3 部署架构（建议）\r\n- **CDN加速**：静态资源部署到阿里云CDN\r\n- **负载均衡**：Nginx + 多台应用服务器\r\n- **容器化**：Docker + Kubernetes\r\n- **监控告警**：Prometheus + Grafana\r\n\r\n### 8.4 第三方服务\r\n- **支付服务**：微信支付、支付宝\r\n- **短信服务**：阿里云短信、腾讯云短信\r\n- **客服系统**：美洽、网易七鱼\r\n- **数据分析**：友盟、神策数据\r\n\r\n---\r\n\r\n## 9. 项目里程碑\r\n\r\n### 9.1 Phase 1：MVP版本（4周）\r\n- [ ] 完成三种登录方式\r\n- [ ] 完成角色选择功能\r\n- [ ] 完成代币充值功能\r\n- [ ] 完成限时礼包功能\r\n- [ ] 集成微信支付、支付宝\r\n- [ ] 完成订单管理功能\r\n\r\n### 9.2 Phase 2：功能完善（4周）\r\n- [ ] 完成积分商城功能\r\n- [ ] 完成活动中心功能（转盘抽奖、充值送头像框、累充活动）\r\n- [ ] 完成充值记录查询功能\r\n- [ ] 完成礼包详情弹窗\r\n- [ ] 完成Banner轮播功能\r\n\r\n### 9.3 Phase 3：优化迭代（4周）\r\n- [ ] 性能优化（懒加载、缓存）\r\n- [ ] 用户体验优化（动画、交互）\r\n- [ ] 数据埋点和分析\r\n- [ ] A/B测试和转化率优化\r\n- [ ] 添加到桌面引导\r\n\r\n### 9.4 Phase 4：扩展功能（持续）\r\n- [ ] 添加更多支付方式\r\n- [ ] 实现优惠券功能\r\n- [ ] 实现推荐好友功能\r\n- [ ] 实现VIP会员功能\r\n- [ ] 实现充值排行榜功能\r\n\r\n---\r\n\r\n## 10. 风险与应对\r\n\r\n### 10.1 技术风险\r\n| 风险 | 影响 | 应对措施 |\r\n|-----|------|---------|\r\n| 支付接口不稳定 | 高 | 接入微信和支付宝双通道，实现降级方案 |\r\n| 并发量过大导致系统崩溃 | 高 | 使用负载均衡、限流、熔断机制 |\r\n| 第三方服务故障 | 中 | 实现服务降级和容错机制 |\r\n\r\n### 10.2 业务风险\r\n| 风险 | 影响 | 应对措施 |\r\n|-----|------|---------|\r\n| 充值转化率低 | 高 | 优化充值流程，增加优惠活动 |\r\n| 用户流失率高 | 中 | 增加积分商城、活动中心等留存功能 |\r\n| 恶意刷单 | 中 | 实现风控系统，限制充值频率 |\r\n\r\n### 10.3 合规风险\r\n| 风险 | 影响 | 应对措施 |\r\n|-----|------|---------|\r\n| 未成年人充值 | 高 | 实名认证、家长监护系统 |\r\n| 隐私数据泄露 | 高 | 数据加密、权限控制、安全审计 |\r\n| 支付合规 | 中 | 遵守《支付服务管理办法》等法规 |\r\n\r\n---\r\n\r\n## 11. 附录\r\n\r\n### 11.1 术语表\r\n- **代币**：游戏内虚拟货币，可用于购买道具和服务\r\n- **档位**：不同价格的代币充值套餐\r\n- **礼包**：包含多种游戏道具的组合商品\r\n- **积分**：充值赠送的虚拟积分，可用于兑换道具\r\n- **角色ID**：游戏内角色的唯一标识符\r\n\r\n### 11.2 参考文档\r\n- 微信支付开发文档：https://pay.weixin.qq.com/wiki/doc/api/\r\n- 支付宝开发文档：https://opendocs.alipay.com/\r\n- 个人信息保护法：http://www.npc.gov.cn/\r\n- 儿童个人信息网络保护规定：http://www.cac.gov.cn/\r\n\r\n---\r\n\r\n**文档版本**：v1.0  \r\n**创建日期**：2026-04-01  \r\n**最后更新**：2026-04-01  \r\n**文档作者**：产品团队\r\n"}
+          {label:"v1.0 (最新)",date:"2026-04-16",content:"# 游戏充值中心（国内版移动端）- PRD\n\n**文档版本**：v1.0\n**创建日期**：2026-04-16\n\n---\n\n> **原型阶段说明**\n> 当前为产品原型阶段，页面内使用模拟数据展示效果。正式上线后，所有数据（档位/礼包/Banner/通知栏/主题颜色等）均从 B 端配置管理系统通过接口获取，C 端不硬编码任何业务数据。\n\n---\n\n## 1. 产品概述\n\n游戏充值中心（国内版）是一个面向中国大陆玩家的在线充值服务平台，为玩家提供便捷、安全的游戏代币充值和道具礼包购买服务。\n\n### 1.1 整体布局\n\n```\n┌─────────────────────────────┐\n│ 顶部导航（Logo + 添加到桌面 + 用户头像）│\n├─────────────────────────────┤\n│ Banner（轮播区，180px 高）    │\n├─────────────────────────────┤\n│ 通知栏（滚动文字公告）         │\n├─────────────────────────────┤\n│ 角色信息卡片（登录后显示）     │\n├─────────────────────────────┤\n│ Tab：代币充值 / 限时礼包       │\n│ 档位/礼包列表（2列网格）       │\n├─────────────────────────────┤\n│ 底部说明（充值到账/售后/提示） │\n└─────────────────────────────┘\n```\n\n---\n\n## 2. 数据来源与接入\n\n所有配置数据通过 URL 参数 `?site=站点名` 指定站点，从 B 端配置管理系统获取：\n\n| 数据类型 | 筛选条件 | 说明 |\n|---------|---------|------|\n| 站点信息 | `name === 站点名` | Logo、主题色、登录方式 |\n| 代币档位 | `siteName === 站点名 && status === 2` | 充值档位列表 |\n| 礼包 | `siteName === 站点名 && giftStatus === 2` | 礼包活动列表 |\n| Banner | `siteName === 站点名 && status === 2` | 轮播 Banner（时间有效） |\n| 通知栏 | `siteName === 站点名 && status === 2` | 公告通知（时间有效） |\n| 主题颜色 | postMessage 实时推送 | B端预览时即时更新 |\n\n**无数据时**：使用页面内静态兜底数据，不影响页面显示。\n\n---\n\n## 3. Banner 展示规则\n\n1. 获取所有 `status=2` 的 Banner，过滤活动时间有效的记录\n   - 时间判断：`startTime ≤ 当前时间 ≤ endTime`；无时间字段视为永久生效\n2. 按 `sort` 升序排列（数字越小越靠前）\n3. **多条 Banner**：每 3 秒自动轮播，底部显示圆点指示器，可点击切换\n4. **单条 Banner**：静态展示，不轮播\n5. **无生效 Banner**：展示默认图片（`images/banner.jpg`）\n6. 点击 Banner：配置了 `jumpUrl` 时新标签页打开\n\n---\n\n## 4. 通知栏展示规则\n\n1. 获取所有 `status=2` 的通知，过滤活动时间有效的记录（时间判断同 Banner）\n2. 按 `sort` 升序排列，**取第一条**展示\n3. **无生效通知**：通知栏区域保留，展示默认文案，不隐藏\n4. 若通知配置了 `linkText` 和 `linkUrl`，文字旁展示可点击超链接（新标签页打开）\n5. 通知栏可手动关闭；关闭后当次会话内不再显示\n\n---\n\n## 5. 登录认证模块\n\n支持三种登录方式（由 B 端站点配置决定开启哪些）：\n\n### 5.1 手机号 + 验证码\n\n```mermaid\nflowchart TD\n    A([输入手机号]) --> B([点击「获取验证码」])\n    B --> C[/\"发送验证码短信\\n60秒倒计时\\n提示：X秒后重新获取验证码\"/]\n    C --> D{倒计时结束}\n    D --> E[\"按钮变为「重新发送」\"]\n    E -->|点击重新发送| B\n    C --> F[\"用户输入验证码 + 勾选协议\"]\n    F --> G([点击「登录」])\n    G --> H{验证结果}\n    H -->|成功| I[\"选择角色 → 显示角色信息卡片\"]\n    H -->|失败| J[\"提示验证码错误\\n可重新获取\"]\n    J --> B\n```\n\n**规则**：无错误次数锁定；协议必须全部勾选才能登录\n\n### 5.2 账密登录\n\n输入账号 + 密码 + 勾选协议 → 点击登录 → 选择服务器和角色\n\n### 5.3 角色ID验证\n\n输入角色ID → 点击验证 → 成功后直接显示角色信息（无需选择角色）\n\n---\n\n## 6. 代币档位卡片结构\n\n每张卡片展示三层图片（均来自 B 端配置）：\n\n| 层级 | 图片来源 | 默认图 |\n|------|---------|--------|\n| 上方充值项大图 | 代币配置 `coinItemImage`（必填） | `images/充值项图片.png` |\n| 代币行图标 | 站点配置 `coinImage` | `images/代币图片.png` |\n| 赠送代币行图标 | 站点配置 `bonusCoinImage` | `images/赠送代币图片.png` |\n\n赠送代币行仅在 `bonusCoin > 0` 时显示。\n\n---\n\n## 7. 支付流程\n\n```mermaid\nflowchart TD\n    A([选择代币档位 / 礼包]) --> B{是否已登录}\n    B -->|未登录| C[弹出登录弹窗\\n完成登录]\n    C --> D\n    B -->|已登录| D[弹出订单抽屉\\n从底部上滑]\n    D --> E[\"展示订单信息\\n代币/赠送代币/赠送积分\\n购买数量（1~99）\"]\n    E --> F([选择支付方式\\n微信支付 / 支付宝])\n    F --> G[\"「立即支付」按钮激活\"]\n    G --> H([点击「立即支付」])\n    H --> I[\"展示二维码 + 300秒倒计时\\n提示扫码完成支付\"]\n    I --> J([点击「我已完成支付」])\n    J --> K{支付验证}\n    K -->|成功| L[结果覆盖层：支付成功]\n    K -->|失败| M[结果覆盖层：支付失败]\n```\n\n- 代币充值：1~99件，代币/赠送/积分按数量倍增\n- 礼包购买：1~99件，需校验限购次数\n- 必须选择支付方式后「立即支付」才可点击\n\n---\n\n## 8. 主题颜色支持\n\nB 端「主题颜色配置」发布后，通过 postMessage 实时推送到 C 端：\n\n| B 端字段名 | 中文说明 | 对应 C 端区域 |\n|-----------|---------|--------------|\n| 页面背景色 | 整个充值页面的底色 | 页面 `body` 背景 |\n| 顶部导航栏 | 顶部 Logo 和按钮所在的导航条 | `.header` |\n| 通知栏 | Banner 下方的公告横幅背景 | `.notice-bar` |\n| 角色验证模块 | 登录状态/角色信息卡片的背景色 | `.role-info` |\n| 充值模块 | 代币档位和礼包所在的面板背景色 | `.card` |\n| 页脚 | 页面底部充值说明区域背景色 | `.footer-info` |\n| 订单确认抽屉 | 选择商品后底部弹出的订单面板背景色 | `.order-drawer` |\n\n---\n\n\n---\n\n## 测试账号（原型演示用）\n\n> 以下为原型阶段 Mock 数据，仅用于功能演示，上线后替换为真实接口。\n\n### 手机号 + 验证码登录\n\n| 项目 | 值 |\n|------|-----|\n| 手机号 | 任意11位手机号均可 |\n| 验证码 | `123456` |\n\n### 账密登录\n\n| 账号 | 密码 |\n|------|------|\n| `test` | `123456` |\n\n### 角色ID验证\n\n| 角色ID | 服务器 | 角色名 | 等级 |\n|--------|--------|--------|------|\n| `10001` | 一区-艾泽拉斯 | 剑圣 | Lv.85 |\n| `10002` | 二区-洛丹伦 | 法师 | Lv.80 |\n| `10003` | 三区-暴风城 | 战士 | Lv.90 |\n\n\n## 版本历史\n\n| 版本 | 日期 | 内容 |\n|------|------|------|\n| v1.0 | 2026-04-16 | 初始版本 |\n"}
         ];
         var prdCurrentVersion = 0;
         var prdLoaded = false;
 
         function openPrdPanel() {
             document.getElementById('prdPanel').classList.add('show');
-            if (!prdLoaded) { loadPrdVersion(0); prdLoaded = true; }
+            if (!prdLoaded) {
+                document.getElementById('prdVersionList').innerHTML = prdVersions.map(function(v, i) {
+                    return '<li class="prd-version-item' + (i === 0 ? ' active' : '') + '" onclick="switchPrdVersion(' + i + ')" title="' + v.label + '"><div class="prd-version-label">' + v.label + '</div><div class="prd-version-date">' + v.date + '</div></li>';
+                }).join('');
+                loadPrdVersion(0);
+                prdLoaded = true;
+            }
         }
 
         function closePrdPanel() {
@@ -4501,6 +4357,17 @@
             document.getElementById('prdPanelBody').innerHTML = renderMarkdown(md);
             document.getElementById('prdPanelBody').scrollTop = 0;
             buildToc();
+            if (typeof mermaid !== 'undefined') {
+                setTimeout(function() {
+                    var blocks = document.querySelectorAll('#prdPanelBody pre > code.language-mermaid, #prdPanelBody code.language-mermaid:not(.mermaid-done)');
+                    blocks.forEach(async function(code) {
+                        code.classList.add('mermaid-done');
+                        var pre = code.parentElement;
+                        var id = 'mermaid-c-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+                        try { var r = await mermaid.render(id, code.textContent.trim()); var w = document.createElement('div'); w.className = 'prd-mermaid-wrap'; w.innerHTML = r.svg; pre.replaceWith(w); } catch(e) {}
+                    });
+                }, 0);
+            }
         }
 
         function buildToc() {
@@ -4562,7 +4429,7 @@
         function renderMarkdown(md) {
             const lines = md.split('\n');
             const out = [];
-            let inCode = false, codeBuf = [], inTable = false, tableHead = '', tableRows = [];
+            let inCode = false, codeLang = '', codeBuf = [], inTable = false, tableHead = '', tableRows = [];
 
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
@@ -4570,9 +4437,10 @@
                 // code block
                 if (line.startsWith('```')) {
                     if (inCode) {
-                        out.push(`<pre><code>${escHtml(codeBuf.join('\n'))}</code></pre>`);
-                        inCode = false; codeBuf = [];
-                    } else { inCode = true; }
+                        const cls = codeLang ? ` class="language-${codeLang}"` : '';
+                        out.push(`<pre><code${cls}>${escHtml(codeBuf.join('\n'))}</code></pre>`);
+                        inCode = false; codeLang = ''; codeBuf = [];
+                    } else { inCode = true; codeLang = line.slice(3).trim(); }
                     continue;
                 }
                 if (inCode) { codeBuf.push(line); continue; }
@@ -4630,5 +4498,7 @@
             return out.join('\n');
         }
     </script>
+
+
 </body>
 </html>

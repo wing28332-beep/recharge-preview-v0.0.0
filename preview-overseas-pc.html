@@ -1,0 +1,2750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Recharge Center - Overseas PC</title>
+    <script>
+    (function() {
+        const p = new URLSearchParams(location.search);
+        const SITE = p.get('site') || '';
+
+        function ls(key) {
+            try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) { return []; }
+        }
+
+        const siteList = ls('site_config_data');
+        const siteInfo = siteList.find(s => s.name === SITE) || {};
+        const allCoins = ls('coin_config_data').filter(c => c.siteName === SITE && c.status === 2);
+        const allGifts = ls('gift_config_data').filter(g => g.siteName === SITE && g.giftStatus === 2 && g.enabled !== false);
+        const banners  = ls('banner_config_data').filter(b => b.siteName === SITE && b.status === 2);
+        const notices  = ls('notification_config_data').filter(n => n.siteName === SITE && n.status === 2);
+
+        if (siteInfo.pageTitle) document.title = siteInfo.pageTitle + ' - PC';
+
+        const REGION_META = {
+            // Asia Pacific
+            TW: { name:'Taiwan',      flag:'🇹🇼', lang:'zh-TW', currency:'TWD', symbol:'NT$' },
+            JP: { name:'Japan',       flag:'🇯🇵', lang:'ja-JP', currency:'JPY', symbol:'¥' },
+            KR: { name:'Korea',       flag:'🇰🇷', lang:'ko-KR', currency:'KRW', symbol:'₩' },
+            HK: { name:'HongKong',    flag:'🇭🇰', lang:'zh-TW', currency:'HKD', symbol:'HK$' },
+            ID: { name:'Indonesia',   flag:'🇮🇩', lang:'en',    currency:'IDR', symbol:'Rp' },
+            TH: { name:'Thailand',    flag:'🇹🇭', lang:'th-TH', currency:'THB', symbol:'฿' },
+            VN: { name:'Vietnam',     flag:'🇻🇳', lang:'vi-VN', currency:'VND', symbol:'₫' },
+            PH: { name:'Philippines', flag:'🇵🇭', lang:'en',    currency:'PHP', symbol:'₱' },
+            SG: { name:'Singapore',   flag:'🇸🇬', lang:'en',    currency:'SGD', symbol:'S$' },
+            MY: { name:'Malaysia',    flag:'🇲🇾', lang:'en',    currency:'MYR', symbol:'RM' },
+            IN: { name:'India',       flag:'🇮🇳', lang:'en',    currency:'INR', symbol:'₹' },
+            AU: { name:'Australia',   flag:'🇦🇺', lang:'en',    currency:'AUD', symbol:'A$' },
+            NZ: { name:'New Zealand', flag:'🇳🇿', lang:'en',    currency:'NZD', symbol:'NZ$' },
+            // Europe
+            UK: { name:'UK',          flag:'🇬🇧', lang:'en',    currency:'GBP', symbol:'£' },
+            FR: { name:'France',      flag:'🇫🇷', lang:'fr',    currency:'EUR', symbol:'€' },
+            DE: { name:'Germany',     flag:'🇩🇪', lang:'de',    currency:'EUR', symbol:'€' },
+            IT: { name:'Italy',       flag:'🇮🇹', lang:'it',    currency:'EUR', symbol:'€' },
+            ES: { name:'Spain',       flag:'🇪🇸', lang:'es',    currency:'EUR', symbol:'€' },
+            RU: { name:'Russia',      flag:'🇷🇺', lang:'ru',    currency:'RUB', symbol:'₽' },
+            // North America
+            US: { name:'United States', flag:'🇺🇸', lang:'en',  currency:'USD', symbol:'$' },
+            CA: { name:'Canada',        flag:'🇨🇦', lang:'en',  currency:'CAD', symbol:'C$' },
+            MX: { name:'Mexico',        flag:'🇲🇽', lang:'es',  currency:'MXN', symbol:'MX$' },
+            // South America
+            BR: { name:'Brazil',      flag:'🇧🇷', lang:'pt',    currency:'BRL', symbol:'R$' },
+            AR: { name:'Argentina',   flag:'🇦🇷', lang:'es',    currency:'ARS', symbol:'$' },
+            CL: { name:'Chile',       flag:'🇨🇱', lang:'es',    currency:'CLP', symbol:'$' },
+            // Middle East & Africa
+            SA: { name:'Saudi Arabia',flag:'🇸🇦', lang:'en',    currency:'SAR', symbol:'﷼' },
+            AE: { name:'UAE',         flag:'🇦🇪', lang:'en',    currency:'AED', symbol:'د.إ' },
+            TR: { name:'Turkey',      flag:'🇹🇷', lang:'en',    currency:'TRY', symbol:'₺' },
+            ZA: { name:'South Africa',flag:'🇿🇦', lang:'en',    currency:'ZAR', symbol:'R' },
+            Others: { name:'Others',  flag:'🌍', lang:'en',     currency:'USD', symbol:'$' }
+        };
+
+        // 洲分组定义（mock 完整数据）
+        const CONTINENT_GROUPS = [
+            { label: 'Asia Pacific', codes: ['TW','JP','KR','HK','ID','TH','VN','PH','SG','MY','IN','AU','NZ'] },
+            { label: 'Europe',       codes: ['UK','FR','DE','IT','ES','RU'] },
+            { label: 'North America',codes: ['US','CA','MX'] },
+            { label: 'South America',codes: ['BR','AR','CL'] },
+            { label: 'Middle East & Africa', codes: ['SA','AE','TR','ZA'] },
+        ];
+
+        const NAME_TO_CODE = {};
+        Object.keys(REGION_META).forEach(code => { NAME_TO_CODE[REGION_META[code].name] = code; });
+
+        const currencySymbols = {
+            USD:'$', EUR:'€', GBP:'£', JPY:'¥', KRW:'₩',
+            TWD:'NT$', HKD:'HK$', CNY:'¥', CAD:'C$', AUD:'A$',
+            THB:'฿', VND:'₫', SGD:'S$', INR:'₹', RUB:'₽', MXN:'MX$', BRL:'R$', NZD:'NZ$'
+        };
+
+        function normalizeRegion(val) {
+            if (!val || val === 'Others') return 'Others';
+            return NAME_TO_CODE[val] || val.toUpperCase();
+        }
+
+        function getConfiguredRegions() {
+            if (siteInfo.regions && siteInfo.regions.length > 0) {
+                const codes = siteInfo.regions.filter(r => r !== 'Others');
+                codes.push('Others');
+                return codes;
+            }
+            const regionSet = new Set();
+            allCoins.forEach(c => { if (c.region) regionSet.add(normalizeRegion(c.region)); });
+            allGifts.forEach(g => { if (g.region) regionSet.add(normalizeRegion(g.region)); });
+            const regions = Array.from(regionSet).filter(r => r !== 'Others');
+            // 无 B 端数据时使用完整 mock 地区列表
+            if (regions.length === 0) {
+                return ['Others','TW','JP','KR','HK','ID','TH','VN','PH','SG','MY','IN','AU','NZ','UK','FR','DE','IT','ES','RU','US','CA','MX','BR','AR','CL','SA','AE','TR','ZA'];
+            }
+            regions.push('Others');
+            return regions;
+        }
+
+        let currentRegionCode = 'Others';
+        let currentLang = 'en';
+
+        document.addEventListener('DOMContentLoaded', function() {
+
+            if (siteInfo.gameLogo) {
+                document.querySelectorAll('.game-icon').forEach(el => { el.src = siteInfo.gameLogo; });
+            }
+
+            // 暴露 REGION_META 供语种列表构建使用
+            window.__REGION_META_PC = REGION_META;
+            window.__currentRegionCode = 'Others'; // 初始化
+
+            // ── 地区选择器（带洲分组 + Others 置顶） ─────────────
+            const configuredRegions = getConfiguredRegions();
+            window.__configuredRegionsPc = configuredRegions;
+            const regionListEl = document.getElementById('regionList');
+            if (regionListEl) {
+                // 构建 HTML：Others 置顶，然后按洲分组
+                let html = `<div class="region-item${configuredRegions[0]==='Others'?' active':''}" data-code="Others" onclick="selectRegion('Others')">
+                    <span class="region-item-flag">🌍</span>Others
+                </div>`;
+
+                CONTINENT_GROUPS.forEach(group => {
+                    const groupCodes = group.codes.filter(c => REGION_META[c]);
+                    if (groupCodes.length === 0) return;
+                    html += `<div class="region-group-header">${group.label}</div>`;
+                    groupCodes.forEach(code => {
+                        const meta = REGION_META[code];
+                        const isActive = configuredRegions[0] === code;
+                        html += `<div class="region-item${isActive?' active':''}" data-code="${code}" onclick="selectRegion('${code}')">
+                            <span class="region-item-flag">${meta.flag}</span>${meta.name}
+                        </div>`;
+                    });
+                });
+
+                regionListEl.innerHTML = html;
+
+                currentRegionCode = configuredRegions[0];
+                const firstMeta = REGION_META[currentRegionCode] || { lang: 'en' };
+                currentLang = firstMeta.lang || 'en';
+                document.getElementById('currentRegionFlag').textContent = (REGION_META[currentRegionCode] || {flag:'🌍'}).flag;
+                document.getElementById('currentRegionName').textContent = (REGION_META[currentRegionCode] || {name:'Others'}).name;
+            }
+
+            // ── 语种列表 ──────────────────────────────────────
+            (function buildLangListEl() {
+                const langListEl = document.getElementById('langList');
+                if (!langListEl) return;
+                const seen = {};
+                const langs = [];
+                configuredRegions.forEach(function(code) {
+                    const meta = REGION_META[code];
+                    if (meta && meta.lang && !seen[meta.lang]) {
+                        seen[meta.lang] = true;
+                        langs.push({ lang: meta.lang });
+                    }
+                });
+                if (langs.length === 0) langs.push({ lang: 'en' });
+                var LANG_LABELS = {
+                    'zh-CN': '中文简体', 'zh-TW': '中文繁體', 'ja-JP': '日本語',
+                    'ko-KR': '한국어', 'th-TH': 'ภาษาไทย', 'vi-VN': 'Tiếng Việt',
+                    'en': 'English', 'fr': 'Français', 'de': 'Deutsch',
+                    'it': 'Italiano', 'es': 'Español', 'ru': 'Русский', 'pt': 'Português'
+                };
+                langListEl.innerHTML = langs.map(function(l, i) {
+                    const label = LANG_LABELS[l.lang] || l.lang;
+                    return `<div class="lang-item${i===0?' active':''}" data-lang="${l.lang}" onclick="selectLang('${l.lang}','${label}')">${label}</div>`;
+                }).join('');
+                // 初始化语种显示
+                if (langs.length > 0) {
+                    const LANG_SHORT = { 'zh-CN':'简体', 'zh-TW':'繁體', 'ja-JP':'日本語', 'ko-KR':'한국어', 'th-TH':'ไทย', 'vi-VN':'Việt', 'en':'EN', 'fr':'FR', 'de':'DE', 'it':'IT', 'es':'ES', 'ru':'RU', 'pt':'PT' };
+                    document.getElementById('currentLangLabel').textContent = LANG_SHORT[langs[0].lang] || langs[0].lang;
+                    window.__bCurrentLang = langs[0].lang;
+                }
+            })();
+
+            // ── Banner ────────────────────────────────────────
+            const bannerEl = document.querySelector('.banner');
+            if (bannerEl && banners.length > 0) {
+                window.__applyBanner = function(lang) {
+                    const now = Date.now();
+                    const active = banners.filter(b => {
+                        if (!b.startTime && !b.endTime) return true;
+                        const s = b.startTime ? new Date(b.startTime).getTime() : 0;
+                        const e = b.endTime ? new Date(b.endTime).getTime() : Infinity;
+                        return now >= s && now <= e;
+                    });
+                    const b = active.find(x => x.language === lang)
+                           || active.find(x => x.language === 'Others' || x.language === 'others')
+                           || active[0];
+                    if (!b) return;
+                    const imgSrc = b.bannerImage || '../images/banner.jpg';
+                    bannerEl.innerHTML = b.jumpUrl
+                        ? `<a href="${b.jumpUrl}" target="_blank"><img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;"></a>`
+                        : `<img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;">`;
+                };
+                window.__applyBanner(currentLang);
+            }
+
+            // ── 通知栏 ────────────────────────────────────────
+            const noticeTextEl = document.getElementById('noticeText');
+            if (noticeTextEl) {
+                window.__applyNotice = function(lang) {
+                    if (!notices.length) return;
+                    const now = Date.now();
+                    const active = notices.filter(n => {
+                        if (!n.startTime && !n.endTime) return true;
+                        const s = n.startTime ? new Date(n.startTime).getTime() : 0;
+                        const e = n.endTime ? new Date(n.endTime).getTime() : Infinity;
+                        return now >= s && now <= e;
+                    });
+                    const n = active.find(x => x.language === lang)
+                           || active.find(x => x.language === 'Others' || x.language === 'others')
+                           || active[0];
+                    if (n) {
+                        const linkHtml = (n.linkText && n.linkUrl)
+                            ? ` <a href="${n.linkUrl}" target="_blank" style="color:#d48806;text-decoration:underline;">${n.linkText}</a>`
+                            : '';
+                        noticeTextEl.innerHTML = (n.content || '') + linkHtml;
+                    }
+                    // 无匹配时保持默认文案
+                };
+                window.__applyNotice(currentLang);
+            }
+
+            // ── 代币档位 ──────────────────────────────────────
+            window.__renderTiers = function(regionCode) {
+                const tierGrid = document.getElementById('tierGrid');
+                if (!tierGrid) return;
+                const regionCoins = allCoins.filter(c => normalizeRegion(c.region) === regionCode);
+                const tiersToShow = regionCoins.length > 0
+                    ? regionCoins
+                    : allCoins.filter(c => normalizeRegion(c.region) === 'Others');
+
+                if (tiersToShow.length === 0) return; // 无数据时保留静态兜底
+
+                const curCode = tiersToShow[0].localCurrency
+                    || (window.__currentCurrency && window.__currentCurrency.code)
+                    || 'USD';
+                const coinImg = siteInfo.coinImage || '../images/代币图片.png';
+                const bonusImg = siteInfo.bonusCoinImage || '../images/赠送代币图片.png';
+                tierGrid.innerHTML = tiersToShow.map((c, idx) => {
+                    const priceNum = c.localPrice ? c.localPrice / 100 : c.price / 100;
+                    const priceStr = curCode + ' ' + Math.round(priceNum).toLocaleString();
+                    const hotBadge = c.isHighlight ? '<div class="tier-hot-badge">HOT</div>' : '';
+                    const bonusPct = c.bonusCoin > 0 ? Math.round(c.bonusCoin / c.coinAmount * 100) : 0;
+                    const pctBadge = bonusPct > 0 ? `<div class="tier-bonus-pct">+${bonusPct}%</div>` : '';
+                    const amtBonus = c.bonusCoin > 0
+                        ? `<img src="${bonusImg}" class="tier-coin-icon"> <span class="tier-amt-bonus">${c.bonusCoin.toLocaleString()}</span>` : '';
+                    const limitHtml = c.limitCount ? `Purchase Limit: ${c.limitCount}` : 'Purchase Limit: —';
+                    const itemImg = c.giftImage || c.coinItemImage || '../images/充值项图片.png';
+                    return `<div class="tier-card${c.isHighlight?' highlight':''}" data-idx="${idx}" onclick="pickTier(this,${idx})">
+                        ${pctBadge}${hotBadge}
+                        <div class="tier-img-wrap">
+                            <img src="${itemImg}" alt="token">
+                        </div>
+                        <div class="tier-body">
+                            <div class="tier-amount-row">
+                                <img src="${coinImg}" class="tier-coin-icon">
+                                <span class="tier-amt-main">${Number(c.coinAmount).toLocaleString()}${c.bonusCoin>0?'+':''}</span>
+                                ${amtBonus}
+                            </div>
+                            <div class="tier-price-btn">${priceStr}</div>
+                            <div class="tier-limit">${limitHtml}</div>
+                        </div>
+                    </div>`;
+                }).join('');
+                window.__currentTiers = tiersToShow;
+            };
+
+            window.__renderTiers(currentRegionCode);
+
+            // ── 礼包列表 ──────────────────────────────────────
+            window.__renderGifts = function(regionCode) {
+                const giftList = document.getElementById('giftList');
+                if (!giftList) return;
+                const regionGifts = allGifts.filter(g => normalizeRegion(g.region) === regionCode);
+                const giftsToShow = regionGifts.length > 0
+                    ? regionGifts
+                    : allGifts.filter(g => normalizeRegion(g.region) === 'Others');
+
+                if (giftsToShow.length === 0) return; // 无数据时保留静态兜底
+                const sym = currencySymbols[giftsToShow[0].localCurrency]
+                    || (window.__currentCurrency && window.__currentCurrency.symbol)
+                    || '$';
+                const currency = giftsToShow[0].localCurrency
+                    || (window.__currentCurrency && window.__currentCurrency.code)
+                    || 'USD';
+                window.__currentGifts = giftsToShow;
+                giftList.innerHTML = giftsToShow.map((g, idx) => {
+                    const priceNum = g.localPrice ? g.localPrice / 100 : parseFloat(g.amount || 0);
+                    const origNum  = g.discountLocalPrice ? g.discountLocalPrice / 100 : priceNum * 2;
+                    const origHtml = `<div class="gift-price-original">${Math.round(origNum).toLocaleString()}</div>`;
+                    const items = (g.content || '').split(/[,，+\n]/).map(s => s.trim()).filter(Boolean);
+                    const itemsHtml = items.map(s => `<div class="gift-desc-line">${s}</div>`).join('');
+                    const limitHtml = g.limitCount
+                        ? `<div class="gift-purchase-limit">(Purchase Limit: ${g.limitCount})</div>` : '';
+                    return `<div class="gift-card" onclick="pickGift(this,${idx})">
+                        <div class="gift-img-wrap">
+                            <img src="${g.giftImage || '../images/libao.png'}" alt="${g.giftName}">
+                        </div>
+                        <div class="gift-info-wrap">
+                            <div class="gift-name">${g.giftName}</div>
+                            ${itemsHtml}
+                            ${limitHtml}
+                        </div>
+                        <div class="gift-price-wrap">
+                            <div class="gift-price-currency">${currency}</div>
+                            <div class="gift-price-main">${Math.round(priceNum).toLocaleString()}</div>
+                            ${origHtml}
+                        </div>
+                    </div>`;
+                }).join('');
+            };
+
+            window.__renderGifts(currentRegionCode);
+
+            // 默认选中第一个档位并展示订单信息
+            setTimeout(function() {
+                var firstTier = document.querySelector('#tierGrid .tier-card');
+                if (firstTier) firstTier.click();
+            }, 0);
+
+        }); // end DOMContentLoaded
+
+        window.selectRegion = function(code, _fromIp) {
+            if (!_fromIp) _userHasInteracted = true; // 用户主动选择，禁止 IP 定位覆盖
+            currentRegionCode = code;
+            window.__currentRegionCode = code;
+            const meta = REGION_META[code] || { name: code, flag: '🌍', lang: 'en', currency:'USD', symbol:'$' };
+            currentLang = meta.lang || 'en';
+            document.getElementById('currentRegionFlag').textContent = meta.flag;
+            document.getElementById('currentRegionName').textContent = meta.name;
+            document.querySelectorAll('.region-item').forEach(el => el.classList.remove('active'));
+            const active = document.querySelector(`.region-item[data-code="${code}"]`);
+            if (active) active.classList.add('active');
+            document.getElementById('regionDropdown').classList.remove('open');
+            // 同步语种选择器
+            var LANG_SHORT = { 'zh-CN':'简体', 'zh-TW':'繁體', 'ja-JP':'日本語', 'ko-KR':'한국어', 'th-TH':'ไทย', 'vi-VN':'Việt', 'en':'EN', 'fr':'FR', 'de':'DE', 'it':'IT', 'es':'ES', 'ru':'RU', 'pt':'PT' };
+            document.getElementById('currentLangLabel').textContent = LANG_SHORT[currentLang] || currentLang;
+            window.__bCurrentLang = currentLang;
+            document.querySelectorAll('#langList .lang-item').forEach(function(el) {
+                el.classList.toggle('active', el.getAttribute('data-lang') === currentLang);
+            });
+            // 地区驱动货币切换（优先级最高，语言切换不影响货币）
+            var cur = meta.currency || 'USD';
+            var sym = meta.symbol || '$';
+            applyCurrency(cur, sym);
+            if (window.__applyBanner) window.__applyBanner(currentLang);
+            if (window.__applyNotice) window.__applyNotice(currentLang);
+            applyI18n(currentLang);
+            if (window.__renderTiers) window.__renderTiers(code);
+            if (window.__renderGifts) window.__renderGifts(code);
+            // 渲染支付方式（B端数据在重渲后才有，延迟一帧）
+            setTimeout(function() {
+                renderRightPanelPayments(code);
+                renderModalPayments(code);
+                var firstTier = document.querySelector('#tierGrid .tier-card');
+                if (firstTier) firstTier.click();
+            }, 0);
+        };
+
+        window.pickTier = function(el, idx) {
+            document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            const c = (window.__currentTiers && idx !== undefined) ? window.__currentTiers[idx] : null;
+            var data;
+            if (c) {
+                const sym = currencySymbols[c.localCurrency] || '$';
+                const priceNum = c.localPrice ? c.localPrice / 100 : c.price / 100;
+                data = {
+                    type:       'tier',
+                    coinAmount: c.coinAmount,
+                    bonusCoin:  c.bonusCoin || 0,
+                    price:      sym + priceNum.toFixed(2),
+                    priceNum:   Math.round(priceNum * 100)
+                };
+            } else {
+                const mainEl    = el.querySelector('.tier-amt-main');
+                const bonusEl2  = el.querySelector('.tier-amt-bonus');
+                const priceEl   = el.querySelector('.tier-price-btn');
+                const rawText   = priceEl ? priceEl.textContent.trim() : '';
+                const rawPrice  = rawText.replace(/[^0-9.]/g, '');
+                const mainText  = mainEl ? mainEl.textContent.replace(/[^0-9,]/g,'').replace(/,/g,'') : '';
+                const bonusText = bonusEl2 ? bonusEl2.textContent.replace(/[^0-9,]/g,'').replace(/,/g,'') : '0';
+                data = {
+                    type:       'tier',
+                    coinAmount: mainText || '',
+                    bonusCoin:  parseInt(bonusText) || 0,
+                    price:      rawText,
+                    priceNum:   Math.round(parseFloat(rawPrice) * 100)
+                };
+            }
+            window.__osPendingOrder = data;
+            updateOrderInfoCard(data);
+        };
+
+        window.pickGift = function(el, idx) {
+            document.querySelectorAll('.gift-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            const g = (window.__currentGifts && idx !== undefined) ? window.__currentGifts[idx] : null;
+            var data;
+            if (g) {
+                const sym = currencySymbols[g.localCurrency] || '$';
+                const priceNum = g.localPrice ? g.localPrice / 100 : parseFloat(g.amount || 0);
+                data = { type:'gift', name: g.giftName, content: g.content || '', price: sym + priceNum.toFixed(2), priceNum: Math.round(priceNum * 100) };
+            } else {
+                const nameEl     = el.querySelector('.gift-name');
+                const priceMain  = el.querySelector('.gift-price-main');
+                const priceCurr  = el.querySelector('.gift-price-currency');
+                const contEls    = el.querySelectorAll('.gift-desc-line');
+                const rawPrice   = priceMain ? priceMain.textContent.replace(/[^0-9.]/g, '') : '0';
+                const sym        = priceCurr ? priceCurr.textContent.trim() : 'USD';
+                const contentArr = Array.from(contEls).map(e => e.textContent.trim());
+                data = { type:'gift', name: nameEl ? nameEl.textContent : '', content: contentArr.join(', '), price: sym + ' ' + rawPrice, priceNum: Math.round(parseFloat(rawPrice) * 100) };
+            }
+            window.__osPendingOrder = data;
+            updateOrderInfoCard(data);
+        };
+
+        function updateOrderInfoCard(data) {
+            var card = document.getElementById('orderInfoCard');
+            if (!card) return;
+            card.style.display = 'block';
+            // 重置数量
+            _siQty = 1;
+            document.getElementById('siQtyInput').value = 1;
+            document.getElementById('siDecBtn').disabled = true;
+            document.getElementById('siIncBtn').disabled = false;
+            // 角色名
+            var roleEl = document.getElementById('orderInfoRoleLine');
+            if (_osCurrentUser) {
+                roleEl.textContent = 'Role: ' + _osCurrentUser;
+                roleEl.style.display = 'block';
+            } else {
+                roleEl.style.display = 'none';
+            }
+            var tokenRow = document.getElementById('orderInfoTokenRow');
+            var bonusRow = document.getElementById('orderInfoBonusRow');
+            var itemRow  = document.getElementById('orderInfoItem');
+            if (data.type === 'tier') {
+                itemRow.style.display = 'none';
+                tokenRow.style.display = 'flex';
+                document.getElementById('orderInfoTokenVal').textContent = data.coinAmount || '—';
+                document.getElementById('orderInfoTokenVal').dataset.base = data.coinAmount || 0;
+                if (data.bonusCoin > 0) {
+                    bonusRow.style.display = 'flex';
+                    document.getElementById('orderInfoBonusVal').textContent = '+' + data.bonusCoin;
+                    document.getElementById('orderInfoBonusVal').dataset.base = data.bonusCoin;
+                } else {
+                    bonusRow.style.display = 'none';
+                }
+            } else {
+                tokenRow.style.display = 'none';
+                bonusRow.style.display = 'none';
+                itemRow.style.display = 'flex';
+                document.getElementById('orderInfoItemVal').textContent = data.name || '—';
+            }
+            document.getElementById('orderInfoTotal').textContent = _formatPrice(data.priceNum) || data.price || '—';
+        }
+
+        // 右栏数量控制
+        var _siQty = 1;
+        function siDecQty() { if (_siQty > 1) { _siQty--; _siRefreshQty(); } }
+        function siIncQty() { if (_siQty < 99) { _siQty++; _siRefreshQty(); } }
+        function siUpdateQty() {
+            var v = parseInt(document.getElementById('siQtyInput').value) || 1;
+            _siQty = Math.max(1, Math.min(99, v));
+            _siRefreshQty();
+        }
+        function _siRefreshQty() {
+            document.getElementById('siQtyInput').value = _siQty;
+            document.getElementById('siDecBtn').disabled = _siQty <= 1;
+            document.getElementById('siIncBtn').disabled = _siQty >= 99;
+            var data = window.__osPendingOrder;
+            if (!data || !data.priceNum) return;
+            var totalNum = data.priceNum * _siQty / 100;
+            var curCode = (window.__currentCurrency && window.__currentCurrency.code) || 'USD';
+            document.getElementById('orderInfoTotal').textContent = curCode + ' ' + Math.round(totalNum).toLocaleString();
+            var tokenEl = document.getElementById('orderInfoTokenVal');
+            var bonusEl = document.getElementById('orderInfoBonusVal');
+            if (tokenEl && tokenEl.dataset.base) tokenEl.textContent = parseInt(tokenEl.dataset.base) * _siQty;
+            if (bonusEl && bonusEl.dataset.base) {
+                bonusEl.textContent = '+' + (parseInt(bonusEl.dataset.base) * _siQty);
+            }
+        }
+
+        function openOsPayModalFromPanel() {
+            var data = window.__osPendingOrder;
+            if (!data) return;
+            // 同步当前数量到弹窗
+            data._qty = _siQty;
+            openOsPayModal(data.type, data);
+        }
+    })();
+    </script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: var(--theme-page-bg, #f5f7fa);
+            min-height: 100vh;
+        }
+
+        /* ── 顶部导航 ──────────────────────────────────────── */
+        .header {
+            background: var(--theme-nav-bg, #000000);
+            padding: 0 24px;
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .logo-text { display: none; }
+
+        .game-icon {
+            height: 40px;
+            width: 40px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+
+        /* Official Store 标识 */
+        .official-store-badge {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #f0a500, #e07b00);
+            border-radius: 6px;
+            padding: 4px 8px;
+            line-height: 1.1;
+            cursor: default;
+        }
+        .official-store-badge .badge-official {
+            font-size: 8px;
+            font-weight: 700;
+            color: white;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+        .official-store-badge .badge-store {
+            font-size: 13px;
+            font-weight: 900;
+            color: white;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: nowrap;
+            flex-shrink: 0;
+        }
+
+        /* 客服图标按钮 */
+        .header-icon-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .header-icon-btn:hover { background: rgba(255,255,255,0.12); }
+
+        /* 添加到主屏幕 */
+        .header-add-home {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 6px;
+            color: white;
+            font-size: 13px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+        .header-add-home:hover { background: rgba(255,255,255,0.1); }
+
+        .header-chevron { font-size: 10px; opacity: 0.7; }
+
+        /* 地区选择器 */
+        .region-selector {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid rgba(255,255,255,0.25);
+            padding: 5px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: white;
+            font-size: 13px;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .region-selector:hover { background: rgba(255,255,255,0.1); }
+
+        /* 语种选择器 */
+        .lang-selector {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            border: 1px solid rgba(255,255,255,0.25);
+            padding: 5px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: white;
+            font-size: 13px;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .lang-selector:hover { background: rgba(255,255,255,0.1); }
+
+        .lang-dropdown {
+            display: none;
+            position: absolute;
+            top: 110%;
+            right: 0;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            min-width: 160px;
+            max-height: 240px;
+            overflow-y: auto;
+            z-index: 200;
+        }
+
+        .lang-dropdown.open { display: block; }
+
+        .lang-item {
+            padding: 9px 14px;
+            font-size: 13px;
+            color: #333;
+            cursor: pointer;
+        }
+
+        .lang-item:hover, .lang-item.active {
+            background: #f0f0ff;
+            color: #722ed1;
+        }
+
+        .region-dropdown {
+            display: none;
+            position: absolute;
+            top: 110%;
+            right: 0;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+            min-width: 200px;
+            max-height: 360px;
+            overflow-y: auto;
+            z-index: 200;
+        }
+
+        .region-dropdown.open { display: block; }
+
+        /* 洲分组标题 */
+        .region-group-header {
+            padding: 7px 14px 6px;
+            font-size: 12px;
+            font-weight: 700;
+            color: white;
+            background: linear-gradient(90deg, #4a90d9, #5ba3e8);
+            letter-spacing: 0.3px;
+        }
+
+        .region-item {
+            padding: 9px 14px 9px 16px;
+            font-size: 13px;
+            color: #333;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background 0.15s;
+        }
+        .region-item:last-child { border-bottom: none; }
+
+        .region-item-flag { font-size: 15px; line-height: 1; flex-shrink: 0; }
+
+        /* Others 条目特殊样式（置顶，蓝色背景） */
+        .region-item:first-child {
+            background: #4a90d9;
+            color: white;
+            font-weight: 600;
+            border-bottom: 2px solid #3a7bc8;
+        }
+        .region-item:first-child:hover { background: #3a7bc8; }
+
+        .region-item:not(:first-child):hover { background: #f0f7ff; color: #1890ff; }
+        .region-item.active:not(:first-child) { background: #e6f0ff; color: #1890ff; font-weight: 600; }
+
+        /* ── 通知栏 ──────────────────────────────────────── */
+        .notice-bar {
+            background: var(--theme-notice-bg, #fff7e6);
+            padding: 8px 40px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #874d00;
+            border-bottom: 1px solid #ffe58f;
+        }
+
+        /* ── Banner ──────────────────────────────────────── */
+        .banner {
+            width: 100%;
+            height: 260px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .banner img { width: 100%; height: 100%; object-fit: cover; }
+
+        /* ── 主内容 ──────────────────────────────────────── */
+        .main-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+
+        /* 左栏 */
+        .left-panel { flex: 1; min-width: 0; }
+
+        /* 右栏 */
+        .right-panel { width: 320px; flex-shrink: 0; }
+
+        /* ── 角色验证卡 ──────────────────────────────────── */
+        .role-info-card {
+            background: var(--theme-auth-bg, white);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+        }
+
+        /* ── 订单信息卡 ──────────────────────────────────── */
+        .order-info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+        .order-info-label { color: #888; }
+        .order-info-val { color: #333; font-weight: 600; font-size: 13px; }
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+        }
+
+        .form-group { margin-bottom: 12px; }
+
+        .form-label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 8px 11px;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .form-input:focus { border-color: #722ed1; }
+
+        .verify-btn {
+            width: 100%;
+            padding: 9px;
+            background: #722ed1;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        /* ── 支付方式卡 ──────────────────────────────────── */
+        .card {
+            background: var(--theme-auth-bg, white);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            margin-bottom: 16px;
+        }
+
+        .pay-btn {
+            width: 100%;
+            text-align: left;
+            padding: 9px 12px;
+            border: 1px solid #e8e8e8;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+        }
+
+        .pay-btn.active, .pay-btn:hover {
+            border-color: #722ed1;
+            color: #722ed1;
+            background: #f9f0ff;
+        }
+
+        /* ── Tab ──────────────────────────────────────────── */
+        .tab-nav {
+            display: flex;
+            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            padding: 10px 22px;
+            border: none;
+            background: none;
+            font-size: 14px;
+            color: #666;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .tab-btn.active {
+            color: #722ed1;
+            font-weight: 600;
+            border-bottom-color: #722ed1;
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* ── 代币档位 ─────────────────────────────────────── */
+        .tab-container {
+            background: var(--theme-recharge-bg, white);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+
+        #tierGrid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+        }
+
+        .tier-card {
+            border: 2px solid #e8e8e8;
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: white;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .tier-card:hover { border-color: #b37feb; box-shadow: 0 4px 16px rgba(114,46,209,0.15); }
+        .tier-card.selected { border-color: #722ed1; box-shadow: 0 4px 16px rgba(114,46,209,0.25); }
+        .tier-card.highlight { border-color: #faad14; }
+
+        /* 档位图片区 */
+        .tier-img-wrap {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: linear-gradient(160deg, #bde0ff 0%, #e8f4ff 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .tier-card.highlight .tier-img-wrap {
+            background: linear-gradient(160deg, #ffe7a0 0%, #fff8e0 100%);
+        }
+        .tier-img-wrap img {
+            width: 80%;
+            height: 80%;
+            object-fit: contain;
+        }
+
+        /* +15% / HOT 角标 */
+        .tier-bonus-pct {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: #ff4d4f;
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 20px;
+            line-height: 1.4;
+        }
+        .tier-card.highlight .tier-bonus-pct {
+            background: linear-gradient(135deg, #ff4d4f, #ff7875);
+        }
+
+        .tier-hot-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: linear-gradient(135deg, #ff4d4f, #ff7875);
+            color: white;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 10px;
+            z-index: 1;
+        }
+
+        /* 档位文字区 */
+        .tier-body {
+            padding: 10px 10px 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* 代币数量行：💎100,000+ 🔶15,000 */
+        .tier-amount-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+            flex-wrap: wrap;
+        }
+        .tier-amt-main { color: #333; }
+        .tier-amt-bonus { color: #fa8c16; }
+        .tier-coin-icon { width: 20px; height: 20px; object-fit: contain; vertical-align: middle; }
+
+        /* 价格按钮 */
+        .tier-price-btn {
+            width: 100%;
+            padding: 8px 6px;
+            background: linear-gradient(135deg, #faad14, #ffc53d);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 700;
+            text-align: center;
+            cursor: pointer;
+            letter-spacing: 0.5px;
+        }
+        .tier-card.selected .tier-price-btn,
+        .tier-price-btn:hover {
+            background: linear-gradient(135deg, #d48806, #faad14);
+        }
+
+        /* 限购 */
+        .tier-limit {
+            font-size: 11px;
+            color: #888;
+        }
+
+        /* ── 礼包 ─────────────────────────────────────────── */
+        #giftList {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .gift-card {
+            display: flex;
+            align-items: stretch;
+            border: 1.5px solid #d0d8e8;
+            border-radius: 10px;
+            overflow: hidden;
+            cursor: pointer;
+            background: #eef2f8;
+            transition: all 0.2s;
+        }
+
+        .gift-card:hover { border-color: #b37feb; background: #e8ecf8; }
+        .gift-card.selected { border-color: #722ed1; background: #e4e8f5; }
+
+        /* 左侧图片区 */
+        .gift-img-wrap {
+            width: 110px;
+            flex-shrink: 0;
+            background: #dde4f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+        }
+        .gift-img-wrap img { width: 80px; height: 80px; object-fit: contain; }
+
+        /* 中间信息区 */
+        .gift-info-wrap {
+            flex: 1;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
+            min-width: 0;
+        }
+        .gift-name {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1a2340;
+            margin-bottom: 4px;
+        }
+        .gift-desc-line {
+            font-size: 12px;
+            color: #4a5a7a;
+            line-height: 1.6;
+        }
+        .gift-purchase-limit {
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        /* 右侧价格区（竖线分隔） */
+        .gift-price-wrap {
+            flex-shrink: 0;
+            width: 110px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-left: 1.5px dashed #b0bcd4;
+            padding: 12px 10px;
+            gap: 2px;
+        }
+        .gift-price-currency {
+            font-size: 11px;
+            color: #4a5a7a;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .gift-price-main {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a2340;
+            line-height: 1.1;
+        }
+        .gift-price-original {
+            font-size: 13px;
+            color: #8896b0;
+            text-decoration: line-through;
+        }
+
+        /* ── 支付弹窗 ─────────────────────────────────────── */
+        .pay-modal-box {
+            background: var(--theme-drawer-bg, white);
+            border-radius: 16px;
+            width: 480px;
+            max-width: 96vw;
+            position: relative;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .pay-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 24px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .pay-modal-title { font-size: 17px; font-weight: 700; color: #1a1a1a; }
+
+        .modal-close {
+            position: relative; top: auto; right: auto;
+            background: none; border: none;
+            font-size: 20px; color: #999; cursor: pointer; line-height: 1;
+        }
+        .modal-close:hover { color: #333; }
+
+        .pay-modal-body { padding: 20px 24px 24px; }
+
+        .role-info-bar {
+            background: #f9f0ff;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .role-info-bar-name { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 2px; }
+        .role-info-bar-server { font-size: 12px; color: #666; }
+        .re-verify-btn {
+            padding: 5px 10px;
+            background: #722ed1;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 12px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        .summary-label { color: #666; }
+        .summary-value { color: #333; font-weight: 600; }
+
+        .quantity-control {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .quantity-label { font-size: 14px; color: #666; }
+        .quantity-selector { display: flex; align-items: center; gap: 12px; }
+        .quantity-btn {
+            width: 32px; height: 32px;
+            border: 1px solid #d9d9d9; border-radius: 4px;
+            background: white; color: #333; font-size: 18px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .quantity-btn:hover { border-color: #722ed1; color: #722ed1; }
+        .quantity-btn:disabled { background: #f5f5f5; color: #d9d9d9; cursor: not-allowed; border-color: #e0e0e0; }
+        .quantity-input {
+            width: 60px; height: 32px; text-align: center;
+            border: 1px solid #d9d9d9; border-radius: 4px;
+            font-size: 14px; font-weight: 600;
+        }
+        .quantity-input:focus { outline: none; border-color: #722ed1; }
+
+        .payment-method-label { display: block; margin-bottom: 10px; font-size: 14px; color: #666; }
+
+        /* ── 右栏支付方式（带Logo横排） ─────────────────── */
+        .os-pay-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 14px;
+            border: 1px solid #e8e8e8; border-radius: 8px;
+            cursor: pointer; margin-bottom: 8px;
+            transition: all 0.15s;
+            background: white;
+        }
+        .os-pay-item:hover { border-color: #b37feb; background: #fdfaff; }
+        .os-pay-item.active { border-color: #722ed1; background: #f9f0ff; }
+        .os-pay-logo { height: 28px; width: auto; max-width: 72px; object-fit: contain; flex-shrink: 0; }
+        .os-pay-name { font-size: 13px; color: #333; flex: 1; }
+        .os-pay-item.active .os-pay-name { color: #722ed1; font-weight: 600; }
+
+        /* ── 弹窗支付方式（带Logo横排） ─────────────────── */
+        .os-pm-pay-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0; border-radius: 8px;
+            cursor: pointer; margin-bottom: 8px;
+            transition: all 0.15s;
+        }
+        .os-pm-pay-item:hover { border-color: #b37feb; }
+        .os-pm-pay-item.selected { border-color: #722ed1; background: #f9f0ff; }
+        .os-pm-pay-logo { height: 26px; width: auto; max-width: 68px; object-fit: contain; flex-shrink: 0; }
+        .os-pm-pay-name { font-size: 13px; color: #333; flex: 1; }
+        .os-pm-pay-item.selected .os-pm-pay-name { color: #722ed1; font-weight: 600; }
+
+        .summary-divider { height: 1px; background: #e0e0e0; margin: 14px 0; }
+
+        .summary-total {
+            display: flex; justify-content: space-between; align-items: baseline;
+            margin-bottom: 16px;
+        }
+        .total-label { font-size: 16px; font-weight: 600; color: #333; }
+        .total-value { color: #ff4d4f; font-size: 28px; font-weight: 700; }
+
+        .qr-section {
+            border-top: 1px solid #f0f0f0;
+            padding-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .qr-placeholder {
+            width: 160px; height: 160px;
+            background: #fafafa; border: 1px solid #e8e8e8; border-radius: 10px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: #ccc; font-size: 11px; gap: 4px;
+        }
+        .qr-placeholder .qr-big { font-size: 80px; line-height: 1; }
+
+        .qr-tip { font-size: 13px; color: #888; text-align: center; line-height: 1.7; }
+        .qr-expire { font-size: 12px; color: #fa8c16; text-align: center; }
+
+        .qr-done-btn {
+            width: 100%; padding: 12px;
+            background: #52c41a; color: white;
+            border: none; border-radius: 8px;
+            cursor: pointer; font-size: 14px; font-weight: 600;
+            transition: background 0.2s; margin-top: 4px;
+        }
+        .qr-done-btn:hover { background: #389e0d; }
+        .qr-cancel-link {
+            font-size: 13px; color: #aaa; cursor: pointer; text-align: center; width: 100%;
+        }
+        .qr-cancel-link:hover { color: #666; }
+
+        .pay-result-overlay {
+            display: none; position: absolute; inset: 0;
+            background: var(--theme-drawer-bg, white); border-radius: 16px;
+            flex-direction: column; align-items: center; justify-content: center;
+            gap: 12px; z-index: 5;
+        }
+        .pay-result-overlay.show { display: flex; }
+        .pay-result-icon { font-size: 60px; }
+        .pay-result-title { font-size: 22px; font-weight: 700; }
+        .pay-result-sub { font-size: 14px; color: #888; }
+        .pay-result-close {
+            margin-top: 8px; padding: 12px 40px;
+            background: #722ed1; color: white;
+            border: none; border-radius: 10px;
+            cursor: pointer; font-size: 15px; font-weight: 600;
+        }
+
+        /* ── 页脚 ─────────────────────────────────────────── */
+        .footer {
+            background: var(--theme-footer-bg, #000000);
+            padding: 20px 40px;
+            margin-top: 20px;
+        }
+
+        .footer-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 32px;
+        }
+
+        /* 左侧社交图标列 */
+        .footer-social {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .social-link {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            overflow: hidden;
+            transition: opacity 0.2s;
+        }
+        .social-link:hover { opacity: 0.85; }
+        .social-link img { width: 100%; height: 100%; object-fit: cover; }
+        /* 无图片时的 fallback */
+        .social-link-fb { background: #1877f2; color: white; font-size: 20px; font-weight: 700; }
+        .social-link-dc { background: #5865f2; color: white; font-size: 18px; }
+
+        /* 右侧：协议链接 + 说明文字 */
+        .footer-text-col {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .footer-policy-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .footer-policy-link {
+            font-size: 13px;
+            color: rgba(255,255,255,0.85);
+            text-decoration: none;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .footer-policy-link:hover { color: white; }
+
+        .footer-policy-sep {
+            color: rgba(255,255,255,0.4);
+            font-size: 13px;
+        }
+
+        .footer-desc {
+            font-size: 12px;
+            color: rgba(255,255,255,0.55);
+            line-height: 1.7;
+        }
+
+        /* ── 确认支付栏 ───────────────────────────────────── */
+        .os-confirm-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: white;
+            border-radius: 10px;
+            padding: 12px 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            margin-top: 4px;
+        }
+        .os-confirm-total { flex: 1; min-width: 0; }
+        .os-confirm-btn {
+            flex-shrink: 0;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #faad14, #ffc53d);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+        .os-confirm-btn:hover { background: linear-gradient(135deg, #d48806, #faad14); }
+
+        /* ── 弹窗通用 ─────────────────────────────────────── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 300;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show { display: flex; }
+
+        /* ── 主题颜色 CSS 变量 ─────────────────────────────── */
+        :root {
+            --theme-page-bg:     #F5F7FA;
+            --theme-nav-bg:      #000000;
+            --theme-notice-bg:   #FFF7E6;
+            --theme-auth-bg:     #FFFFFF;
+            --theme-recharge-bg: #FFFFFF;
+            --theme-footer-bg:   #000000;
+            --theme-modal-bg:    #FFFFFF;
+            --theme-drawer-bg:   #FFFFFF;
+        }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        if (typeof mermaid !== 'undefined') {
+          mermaid.initialize({ startOnLoad: false, theme: 'default',
+            flowchart: { curve: 'basis', padding: 12 },
+            themeVariables: { fontSize: '13px', primaryColor: '#ecf5ff', primaryBorderColor: '#409eff', lineColor: '#606266', secondaryColor: '#f5f7fa' }
+          });
+        }
+      });
+    </script>
+</head>
+<body>
+
+    <!-- 顶部导航 -->
+    <div class="header">
+        <!-- Logo 区 -->
+        <div class="logo">
+            <img src="../images/gameicon.png" alt="game" class="game-icon">
+            <div class="official-store-badge">
+                <span class="badge-official">OFFICIAL</span>
+                <span class="badge-store">STORE</span>
+            </div>
+        </div>
+        <!-- 右侧功能区 -->
+        <div class="header-right">
+            <!-- 客服图标（耳机） -->
+            <div class="header-icon-btn" title="Customer Service">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+                    <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+                </svg>
+            </div>
+            <!-- 收藏网页（书签） -->
+            <div class="header-icon-btn" title="Bookmark this page" onclick="addToHomeScreen()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                </svg>
+            </div>
+            <!-- 添加到主屏幕 -->
+            <div class="header-add-home" onclick="addToHomeScreen()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                <span id="addHomeText">Add to Home Screen</span>
+            </div>
+            <!-- 语种选择器 -->
+            <div class="lang-selector" id="langSelector" onclick="toggleLangDropdown()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                <span id="currentLangLabel">EN</span>
+                <span class="header-chevron">▾</span>
+                <div class="lang-dropdown" id="langDropdown">
+                    <div id="langList"></div>
+                </div>
+            </div>
+            <!-- 地区选择器 -->
+            <div class="region-selector" onclick="document.getElementById('regionDropdown').classList.toggle('open')">
+                <span id="currentRegionFlag">🌍</span>
+                <span id="currentRegionName">Others</span>
+                <span class="header-chevron">▾</span>
+                <div class="region-dropdown" id="regionDropdown">
+                    <div id="regionList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Banner -->
+    <div class="banner">
+        <img src="../images/banner.jpg" alt="Recharge Event">
+    </div>
+
+    <!-- 通知栏 -->
+    <div class="notice-bar" id="noticeBar">
+        <span>📢</span>
+        <span class="notice-text" id="noticeText" data-is-default="true">Welcome to the Official Recharge Center! Top up now and get bonus tokens!</span>
+    </div>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+
+        <!-- 左栏：代币 + 礼包 -->
+        <div class="left-panel">
+
+            <!-- Tab 切换 -->
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="switchTab('coin',this)">Token Top-Up</button>
+                <button class="tab-btn" onclick="switchTab('gift',this)">Gift Packs</button>
+            </div>
+
+            <!-- 代币充值 Tab -->
+            <div class="tab-content active" id="tab-coin">
+                <div class="tab-container">
+                    <div class="card-title">Select Top-Up Amount</div>
+                    <div id="tierGrid">
+                        <!-- 默认静态档位 -->
+                        <div class="tier-card" onclick="pickTier(this)">
+                            <div class="tier-img-wrap">
+                                <img src="../images/daibi.png" alt="token">
+                            </div>
+                            <div class="tier-body">
+                                <div class="tier-amount-row">
+                                    <span class="tier-amt-main">💎 100</span>
+                                </div>
+                                <div class="tier-price-btn">$ 6.00</div>
+                                <div class="tier-limit">Purchase Limit: —</div>
+                            </div>
+                        </div>
+                        <div class="tier-card" onclick="pickTier(this)">
+                            <div class="tier-img-wrap">
+                                <img src="../images/daibi.png" alt="token">
+                            </div>
+                            <div class="tier-body">
+                                <div class="tier-amount-row">
+                                    <span class="tier-amt-main">💎 500</span>
+                                </div>
+                                <div class="tier-price-btn">$ 30.00</div>
+                                <div class="tier-limit">Purchase Limit: —</div>
+                            </div>
+                        </div>
+                        <div class="tier-card" onclick="pickTier(this)">
+                            <div class="tier-bonus-pct">+20%</div>
+                            <div class="tier-img-wrap">
+                                <img src="../images/daibi.png" alt="token">
+                            </div>
+                            <div class="tier-body">
+                                <div class="tier-amount-row">
+                                    <span class="tier-amt-main">💎 1,000+</span>
+                                    <span class="tier-amt-bonus">🔶 200</span>
+                                </div>
+                                <div class="tier-price-btn">$ 60.00</div>
+                                <div class="tier-limit">Purchase Limit: —</div>
+                            </div>
+                        </div>
+                        <div class="tier-card highlight" onclick="pickTier(this)">
+                            <div class="tier-bonus-pct">+27%</div>
+                            <div class="tier-hot-badge">HOT</div>
+                            <div class="tier-img-wrap">
+                                <img src="../images/daibi.png" alt="token">
+                            </div>
+                            <div class="tier-body">
+                                <div class="tier-amount-row">
+                                    <span class="tier-amt-main">💎 3,000+</span>
+                                    <span class="tier-amt-bonus">🔶 800</span>
+                                </div>
+                                <div class="tier-price-btn">$ 168.00</div>
+                                <div class="tier-limit">Purchase Limit: —</div>
+                            </div>
+                        </div>
+                        <div class="tier-card" onclick="pickTier(this)">
+                            <div class="tier-bonus-pct">+33%</div>
+                            <div class="tier-img-wrap">
+                                <img src="../images/daibi.png" alt="token">
+                            </div>
+                            <div class="tier-body">
+                                <div class="tier-amount-row">
+                                    <span class="tier-amt-main">💎 6,000+</span>
+                                    <span class="tier-amt-bonus">🔶 2,000</span>
+                                </div>
+                                <div class="tier-price-btn">$ 328.00</div>
+                                <div class="tier-limit">Purchase Limit: —</div>
+                            </div>
+                        </div>
+                        <div class="tier-card" onclick="pickTier(this)">
+                            <div class="tier-bonus-pct">+50%</div>
+                            <div class="tier-img-wrap">
+                                <img src="../images/daibi.png" alt="token">
+                            </div>
+                            <div class="tier-body">
+                                <div class="tier-amount-row">
+                                    <span class="tier-amt-main">💎 10,000+</span>
+                                    <span class="tier-amt-bonus">🔶 5,000</span>
+                                </div>
+                                <div class="tier-price-btn">$ 498.00</div>
+                                <div class="tier-limit">Purchase Limit: —</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 礼包 Tab -->
+            <div class="tab-content" id="tab-gift">
+                <div id="giftList">
+                    <!-- 默认静态礼包 -->
+                    <div class="gift-card" onclick="pickGift(this)">
+                        <div class="gift-img-wrap">
+                            <img src="../images/libao.png" alt="Starter Pack">
+                        </div>
+                        <div class="gift-info-wrap">
+                            <div class="gift-name">Starter Pack</div>
+                            <div class="gift-desc-line">Diamond × 100</div>
+                            <div class="gift-desc-line">Gold × 1000</div>
+                            <div class="gift-desc-line">Exp Potion × 5</div>
+                            <div class="gift-purchase-limit">(Purchase Limit: 1)</div>
+                        </div>
+                        <div class="gift-price-wrap">
+                            <div class="gift-price-currency">USD</div>
+                            <div class="gift-price-main">30</div>
+                            <div class="gift-price-original">60</div>
+                        </div>
+                    </div>
+                    <div class="gift-card" onclick="pickGift(this)">
+                        <div class="gift-img-wrap">
+                            <img src="../images/libao.png" alt="Deluxe Pack">
+                        </div>
+                        <div class="gift-info-wrap">
+                            <div class="gift-name">Deluxe Pack</div>
+                            <div class="gift-desc-line">Diamond × 500</div>
+                            <div class="gift-desc-line">Gold × 5000</div>
+                            <div class="gift-desc-line">Enhancement Stone × 20</div>
+                            <div class="gift-purchase-limit">(Purchase Limit: 3)</div>
+                        </div>
+                        <div class="gift-price-wrap">
+                            <div class="gift-price-currency">USD</div>
+                            <div class="gift-price-main">128</div>
+                            <div class="gift-price-original">256</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 右栏：角色验证 + 订单信息 + 支付方式 -->
+        <div class="right-panel" id="loginCard">
+            <!-- 角色验证 -->
+            <div class="role-info-card">
+                <div class="card-title" id="roleVerifyTitle">Role Verification</div>
+                <div id="loginForm">
+                    <div class="form-group" style="display:flex;gap:8px;align-items:flex-end;">
+                        <div style="flex:1;">
+                            <label class="form-label" id="charIdLabel">Character ID</label>
+                            <input type="text" id="roleIdInput" class="form-input" placeholder="Enter your Role ID">
+                        </div>
+                        <button class="verify-btn" id="verifyBtnEl" style="width:auto;padding:9px 16px;white-space:nowrap;flex-shrink:0;" onclick="doLogin()">Verify</button>
+                    </div>
+                </div>
+                <div id="roleVerified" style="display:none;padding:6px 0;">
+                    <div style="font-size:13px;color:#52c41a;font-weight:600;" id="verifiedRoleId">Role ID: —</div>
+                    <button id="reEnterBtn" onclick="doLogout()" style="margin-top:6px;font-size:12px;color:#999;background:none;border:none;cursor:pointer;padding:0;">Re-enter</button>
+                </div>
+            </div>
+
+            <!-- 订单信息 -->
+            <div class="card" id="orderInfoCard">
+                <div class="card-title" id="orderConfirmTitle" style="margin-bottom:12px;">Order Confirmation</div>
+                <div id="orderInfoRoleLine" style="font-size:13px;color:#555;margin-bottom:10px;display:none;"></div>
+                <div class="order-info-row" id="orderInfoItem" style="display:none;">
+                    <span class="order-info-label" id="orderItemLabel">Item</span>
+                    <span class="order-info-val" id="orderInfoItemVal">—</span>
+                </div>
+                <div class="order-info-row" id="orderInfoTokenRow">
+                    <span class="order-info-label" id="orderTokenLabel">Tokens</span>
+                    <span class="order-info-val" id="orderInfoTokenVal">—</span>
+                </div>
+                <div class="order-info-row" id="orderInfoBonusRow">
+                    <span class="order-info-label" id="orderBonusLabel">Bonus</span>
+                    <span class="order-info-val" id="orderInfoBonusVal" style="color:#52c41a;">—</span>
+                </div>
+                <div class="order-info-row">
+                    <span class="order-info-label" id="orderQtyLabel">Quantity</span>
+                    <div class="quantity-selector" style="gap:8px;">
+                        <button class="quantity-btn" id="siDecBtn" onclick="siDecQty()">-</button>
+                        <input type="number" class="quantity-input" id="siQtyInput" value="1" min="1" max="99" onchange="siUpdateQty()">
+                        <button class="quantity-btn" id="siIncBtn" onclick="siIncQty()">+</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 支付方式 -->
+            <div class="card">
+                <div class="card-title" id="payMethodTitle" style="margin-bottom:12px;">Select Payment Method</div>
+                <div id="osPayMethodList"><!-- 由 renderRightPanelPayments() 动态渲染 --></div>
+            </div>
+
+            <!-- 总价 + 确认支付按钮 -->
+            <div class="os-confirm-bar">
+                <div class="os-confirm-total">
+                    <div id="orderTotalLabel" style="font-size:12px;color:#888;margin-bottom:2px;">Total price:</div>
+                    <div id="orderInfoTotal" style="font-size:20px;font-weight:700;color:#ff4d4f;line-height:1;">—</div>
+                </div>
+                <button class="os-confirm-btn" id="confirmPayBtn" onclick="openOsPayModalFromPanel()">Confirm Payment</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 支付弹窗 -->
+    <div class="modal-overlay" id="osPayModal">
+        <div class="pay-modal-box">
+            <div class="pay-result-overlay" id="osPayResultOverlay">
+                <div class="pay-result-icon" id="osPayResultIcon">✅</div>
+                <div class="pay-result-title" id="osPayResultTitle">Payment Successful!</div>
+                <div class="pay-result-sub" id="osPayResultSub">Tokens will be credited within 5 minutes. Thank you!</div>
+                <button class="pay-result-close" onclick="closeOsPayModal()">Done</button>
+            </div>
+            <div class="pay-modal-header">
+                <div class="pay-modal-title" id="osPayModalTitle">Order Confirmation</div>
+                <button class="modal-close" onclick="closeOsPayModal()">✕</button>
+            </div>
+            <div class="pay-modal-body">
+                <div class="role-info-bar" id="osPmRoleInfo" style="display:none;">
+                    <div>
+                        <div class="role-info-bar-name" id="osPmRoleName">—</div>
+                        <div class="role-info-bar-server" id="osPmRoleServer"></div>
+                    </div>
+                    <button class="re-verify-btn" id="osPmReVerifyBtn" onclick="closeOsPayModal();document.getElementById('loginCard').scrollIntoView({behavior:'smooth'})">Re-verify</button>
+                </div>
+                <div class="summary-item" id="osPmTierFields">
+                    <span class="summary-label" id="osPmTierLabel">Token Amount</span>
+                    <span class="summary-value" id="osPmTokenAmount">0</span>
+                </div>
+                <div class="summary-item" id="osPmBonusFields">
+                    <span class="summary-label" id="osPmBonusLabel">Bonus Tokens</span>
+                    <span class="summary-value" id="osPmBonusAmount" style="color:#52c41a;">0</span>
+                </div>
+                <div class="summary-item" id="osPmGiftNameField" style="display:none;">
+                    <span class="summary-label" id="osPmGiftLabel">Gift Pack</span>
+                    <span class="summary-value" id="osPmGiftName">—</span>
+                </div>
+                <div class="summary-item" id="osPmGiftContentField" style="display:none;">
+                    <span class="summary-label" id="osPmContLabel">Contents</span>
+                    <span class="summary-value" id="osPmGiftContent" style="font-size:12px;line-height:1.6;">—</span>
+                </div>
+                <div class="summary-item" id="osPmPointsFields">
+                    <span class="summary-label" id="osPmPtsLabel">Bonus Points</span>
+                    <span class="summary-value" id="osPmPointsAmount" style="color:#722ed1;">0</span>
+                </div>
+                <div class="quantity-control">
+                    <span class="quantity-label" id="osPmQtyLabel">Quantity</span>
+                    <div class="quantity-selector">
+                        <button class="quantity-btn" id="osPmDecBtn" onclick="osPmDecQty()">-</button>
+                        <input type="number" class="quantity-input" id="osPmQtyInput" value="1" min="1" max="99" onchange="osPmUpdateQty()">
+                        <button class="quantity-btn" id="osPmIncBtn" onclick="osPmIncQty()">+</button>
+                    </div>
+                </div>
+                <div style="margin-bottom:0;">
+                    <div class="payment-method-label" id="osPmPayLabel">Payment Method</div>
+                    <div id="osPmPaymentOptions"><!-- 由 renderModalPayments() 动态渲染 --></div>
+                </div>
+                <div class="summary-divider"></div>
+                <div class="summary-total">
+                    <span class="total-label" id="osPmTotalLabel">Total Amount</span>
+                    <span class="total-value" id="osPmTotalPrice">$0.00</span>
+                </div>
+                <div class="qr-section">
+                    <div class="qr-placeholder">
+                        <div class="qr-big">▦</div>
+                    </div>
+                    <div class="qr-tip">Please use <strong id="osPmMethodName">PayPal</strong> on your phone to complete payment</div>
+                    <div class="qr-expire">Expires in: <span id="osPmCountdown">300</span> seconds</div>
+                    <button class="qr-done-btn" id="osPmDoneBtn" onclick="osPmVerifyPayment()">I've Completed Payment</button>
+                    <div class="qr-cancel-link" id="osPmCancelLink" onclick="closeOsPayModal()">Cancel</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 页脚 -->
+    <div class="footer">
+        <div class="footer-inner">
+            <!-- 左侧：社交图标 -->
+            <div class="footer-social">
+                <div class="social-link social-link-fb" onclick="window.open('https://facebook.com','_blank')" title="Facebook">f</div>
+                <div class="social-link social-link-dc" onclick="window.open('https://discord.com','_blank')" title="Discord">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/></svg>
+                </div>
+            </div>
+            <!-- 右侧：协议 + 说明 -->
+            <div class="footer-text-col">
+                <div class="footer-policy-row">
+                    <a class="footer-policy-link" id="footerTos" href="#">Terms of Service</a>
+                    <span class="footer-policy-sep">|</span>
+                    <a class="footer-policy-link" id="footerPp" href="#">Privacy Policy</a>
+                </div>
+                <div class="footer-desc" id="footerDesc">
+                    If you encounter any issues during the payment process, please contact us via our customer service email at support@game.mail or through our Facebook homepage for assistance.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 页面加载完成后默认选中第一个档位，并应用默认语言和支付方式
+        document.addEventListener('DOMContentLoaded', function() {
+            applyI18n('en');
+            // 渲染初始支付方式（Others 默认）
+            setTimeout(function() {
+                var initCode = window.__currentRegionCode || 'Others';
+                renderRightPanelPayments(initCode);
+                renderModalPayments(initCode);
+            }, 50);
+            setTimeout(function() {
+                if (!window.__osPendingOrder) {
+                    var firstTier = document.querySelector('#tierGrid .tier-card');
+                    if (firstTier) firstTier.click();
+                }
+            }, 50);
+        });
+
+        function switchTab(tab, btn) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('tab-' + tab).classList.add('active');
+        }
+
+        // 语种选择器：已配置地区对应的语言列表（去重）
+        var LANG_LABELS = {
+            'zh-CN': '中文简体', 'zh-TW': '中文繁體', 'ja-JP': '日本語',
+            'ko-KR': '한국어', 'th-TH': 'ภาษาไทย', 'vi-VN': 'Tiếng Việt',
+            'en': 'English', 'fr': 'Français', 'de': 'Deutsch',
+            'it': 'Italiano', 'es': 'Español', 'ru': 'Русский', 'pt': 'Português'
+        };
+
+        function buildLangList(regions) {
+            var seen = {};
+            var langs = [];
+            regions.forEach(function(code) {
+                var meta = window.__REGION_META_PC && window.__REGION_META_PC[code];
+                if (meta && meta.lang && !seen[meta.lang]) {
+                    seen[meta.lang] = true;
+                    langs.push({ lang: meta.lang, label: LANG_LABELS[meta.lang] || meta.lang });
+                }
+            });
+            return langs;
+        }
+
+        function toggleLangDropdown() {
+            document.getElementById('langDropdown').classList.toggle('open');
+            document.getElementById('regionDropdown').classList.remove('open');
+        }
+
+        // ── 多语言翻译表 ───────────────────────────────────────
+        var I18N = {
+            'en': {
+                tabCoin: 'Token Top-Up', tabGift: 'Gift Packs',
+                selectAmount: 'Select Top-Up Amount',
+                roleVerify: 'Role Verification', characterId: 'Character ID',
+                roleIdPlaceholder: 'Enter your Role ID', verifyBtn: 'Verify',
+                reEnter: 'Re-enter', verified: 'Verified',
+                orderConfirm: 'Order Confirmation', tokens: 'Tokens', bonus: 'Bonus',
+                item: 'Item', quantity: 'Quantity', totalPrice: 'Total price:',
+                selectPayment: 'Select Payment Method',
+                confirmPayment: 'Confirm Payment',
+                purchaseLimit: 'Purchase Limit:',
+                addToHome: 'Add to Home Screen',
+                termsOfService: 'Terms of Service', privacyPolicy: 'Privacy Policy',
+                footerDesc: 'If you encounter any issues during the payment process, please contact us via our customer service email at support@game.mail or through our Facebook homepage for assistance.',
+                payModalTitle: 'Order Confirmation', totalAmount: 'Total Amount',
+                tokenAmount: 'Token Amount', bonusTokens: 'Bonus Tokens',
+                giftPack: 'Gift Pack', contents: 'Contents', bonusPts: 'Bonus Points',
+                qty: 'Quantity', payMethod: 'Payment Method', reVerify: 'Re-verify',
+                iCompletedPay: "I've Completed Payment", cancelPay: 'Cancel',
+                qrTip: 'Please use {method} on your phone to complete payment',
+                expiresIn: 'Expires in: {sec} seconds',
+                paySuccess: 'Payment Successful!', paySuccessSub: 'Tokens will be credited within 5 minutes. Thank you!',
+                payFail: 'Payment Not Detected', payFailSub: 'Please confirm payment on your device and try again',
+                qrExpired: 'QR Code Expired', qrExpiredSub: 'Please close and reorder', done: 'Done',
+                noticePlaceholder: 'Welcome to the Official Recharge Center! Top up now and get bonus tokens!',
+            },
+            'zh-TW': {
+                tabCoin: '代幣充值', tabGift: '道具禮包',
+                selectAmount: '選擇充值檔位',
+                roleVerify: '角色驗證', characterId: '角色ID',
+                roleIdPlaceholder: '請輸入遊戲角色ID', verifyBtn: '驗證',
+                reEnter: '重新輸入', verified: '已驗證',
+                orderConfirm: '確認訂單', tokens: '代幣數量', bonus: '贈送代幣',
+                item: '禮包名稱', quantity: '購買數量', totalPrice: '應付金額：',
+                selectPayment: '選擇支付方式',
+                confirmPayment: '確認支付',
+                purchaseLimit: '限購：',
+                addToHome: '添加到主畫面',
+                termsOfService: '服務條款', privacyPolicy: '隱私政策',
+                footerDesc: '如您在支付過程中遇到任何問題，請通過客服郵箱 support@game.mail 或 Facebook 主頁聯繫我們。',
+                payModalTitle: '確認訂單', totalAmount: '應付金額',
+                tokenAmount: '代幣數量', bonusTokens: '贈送代幣',
+                giftPack: '禮包名稱', contents: '禮包內容', bonusPts: '贈送積分',
+                qty: '購買數量', payMethod: '支付方式', reVerify: '重新驗證',
+                iCompletedPay: '我已完成支付', cancelPay: '取消',
+                qrTip: '請用手機{method}掃描上方二維碼完成支付',
+                expiresIn: '有效期：{sec} 秒',
+                paySuccess: '支付成功！', paySuccessSub: '代幣將在5分鐘內到帳，感謝充值',
+                payFail: '未檢測到支付', payFailSub: '請確認手機端已完成支付後再試',
+                qrExpired: '二維碼已過期', qrExpiredSub: '請關閉後重新下單', done: '完成',
+                noticePlaceholder: '歡迎來到官方充值中心！充值即獲贈額外代幣！',
+            },
+            'ja-JP': {
+                tabCoin: 'トークンチャージ', tabGift: 'ギフトパック',
+                selectAmount: 'チャージ金額を選択',
+                roleVerify: 'キャラクターID確認', characterId: 'キャラクターID',
+                roleIdPlaceholder: 'キャラクターIDを入力', verifyBtn: '確認',
+                reEnter: '再入力', verified: '確認済み',
+                orderConfirm: '注文確認', tokens: 'トークン数', bonus: 'ボーナス',
+                item: 'アイテム', quantity: '数量', totalPrice: '合計金額：',
+                selectPayment: '支払い方法を選択',
+                confirmPayment: '支払いを確認',
+                purchaseLimit: '購入制限：',
+                addToHome: 'ホーム画面に追加',
+                termsOfService: '利用規約', privacyPolicy: 'プライバシーポリシー',
+                footerDesc: 'お支払いに問題が発生した場合は、support@game.mail またはFacebookページよりお問い合わせください。',
+                payModalTitle: '注文確認', totalAmount: '合計金額',
+                tokenAmount: 'トークン数', bonusTokens: 'ボーナストークン',
+                giftPack: 'ギフトパック', contents: '内容', bonusPts: 'ボーナスポイント',
+                qty: '数量', payMethod: '支払い方法', reVerify: '再確認',
+                iCompletedPay: '支払い完了', cancelPay: 'キャンセル',
+                qrTip: '{method}でQRコードをスキャンして支払いを完了してください',
+                expiresIn: '有効期限：{sec}秒',
+                paySuccess: '支払い成功！', paySuccessSub: 'トークンは5分以内に付与されます。ありがとうございます！',
+                payFail: '支払いが検出されませんでした', payFailSub: '端末での支払いを確認してから再試行してください',
+                qrExpired: 'QRコードの有効期限切れ', qrExpiredSub: '閉じて再注文してください', done: '完了',
+                noticePlaceholder: '公式チャージセンターへようこそ！チャージでボーナストークンをゲット！',
+            },
+            'ko-KR': {
+                tabCoin: '토큰 충전', tabGift: '선물 팩',
+                selectAmount: '충전 금액 선택',
+                roleVerify: '캐릭터 인증', characterId: '캐릭터 ID',
+                roleIdPlaceholder: '캐릭터 ID 입력', verifyBtn: '인증',
+                reEnter: '다시 입력', verified: '인증됨',
+                orderConfirm: '주문 확인', tokens: '토큰 수량', bonus: '보너스 토큰',
+                item: '아이템', quantity: '수량', totalPrice: '총 금액：',
+                selectPayment: '결제 수단 선택',
+                confirmPayment: '결제 확인',
+                purchaseLimit: '구매 제한：',
+                addToHome: '홈 화면에 추가',
+                termsOfService: '서비스 약관', privacyPolicy: '개인정보 처리방침',
+                footerDesc: '결제 과정에서 문제가 발생하면 support@game.mail 또는 Facebook 페이지로 문의하세요.',
+                payModalTitle: '주문 확인', totalAmount: '총 금액',
+                tokenAmount: '토큰 수량', bonusTokens: '보너스 토큰',
+                giftPack: '선물 팩', contents: '내용', bonusPts: '보너스 포인트',
+                qty: '수량', payMethod: '결제 수단', reVerify: '재인증',
+                iCompletedPay: '결제 완료', cancelPay: '취소',
+                qrTip: '{method}로 QR 코드를 스캔하여 결제를 완료하세요',
+                expiresIn: '유효 기간：{sec}초',
+                paySuccess: '결제 성공！', paySuccessSub: '토큰은 5분 내로 지급됩니다. 감사합니다！',
+                payFail: '결제가 감지되지 않음', payFailSub: '기기에서 결제를 확인한 후 다시 시도하세요',
+                qrExpired: 'QR 코드 만료', qrExpiredSub: '닫고 다시 주문하세요', done: '완료',
+                noticePlaceholder: '공식 충전 센터에 오신 것을 환영합니다！지금 충전하고 보너스 토큰을 받으세요！',
+            },
+            'th-TH': {
+                tabCoin: 'เติมโทเค็น', tabGift: 'ชุดของขวัญ',
+                selectAmount: 'เลือกจำนวนเงินที่เติม',
+                roleVerify: 'ยืนยันตัวละคร', characterId: 'ID ตัวละคร',
+                roleIdPlaceholder: 'กรอก ID ตัวละคร', verifyBtn: 'ยืนยัน',
+                reEnter: 'กรอกใหม่', verified: 'ยืนยันแล้ว',
+                orderConfirm: 'ยืนยันคำสั่งซื้อ', tokens: 'จำนวนโทเค็น', bonus: 'โทเค็นโบนัส',
+                item: 'รายการ', quantity: 'จำนวน', totalPrice: 'ยอดรวม：',
+                selectPayment: 'เลือกวิธีชำระเงิน',
+                confirmPayment: 'ยืนยันการชำระเงิน',
+                purchaseLimit: 'จำกัดการซื้อ：',
+                addToHome: 'เพิ่มไปยังหน้าจอหลัก',
+                termsOfService: 'ข้อกำหนดการใช้งาน', privacyPolicy: 'นโยบายความเป็นส่วนตัว',
+                footerDesc: 'หากพบปัญหาในการชำระเงิน กรุณาติดต่อ support@game.mail หรือ Facebook',
+                payModalTitle: 'ยืนยันคำสั่งซื้อ', totalAmount: 'ยอดรวม',
+                tokenAmount: 'จำนวนโทเค็น', bonusTokens: 'โทเค็นโบนัส',
+                giftPack: 'ชุดของขวัญ', contents: 'เนื้อหา', bonusPts: 'แต้มโบนัส',
+                qty: 'จำนวน', payMethod: 'วิธีชำระเงิน', reVerify: 'ยืนยันใหม่',
+                iCompletedPay: 'ชำระเงินแล้ว', cancelPay: 'ยกเลิก',
+                qrTip: 'กรุณาใช้ {method} สแกน QR เพื่อชำระเงิน',
+                expiresIn: 'หมดอายุใน：{sec} วินาที',
+                paySuccess: 'ชำระเงินสำเร็จ！', paySuccessSub: 'โทเค็นจะถูกเติมภายใน 5 นาที',
+                payFail: 'ไม่พบการชำระเงิน', payFailSub: 'กรุณายืนยันการชำระเงินแล้วลองอีกครั้ง',
+                qrExpired: 'QR หมดอายุ', qrExpiredSub: 'กรุณาปิดและสั่งซื้อใหม่', done: 'เสร็จสิ้น',
+                noticePlaceholder: 'ยินดีต้อนรับสู่ศูนย์เติมเงินอย่างเป็นทางการ！เติมเงินเพื่อรับโทเค็นโบนัส！',
+            },
+            'vi-VN': {
+                tabCoin: 'Nạp Token', tabGift: 'Gói Quà',
+                selectAmount: 'Chọn mệnh giá nạp',
+                roleVerify: 'Xác minh nhân vật', characterId: 'ID Nhân vật',
+                roleIdPlaceholder: 'Nhập ID nhân vật', verifyBtn: 'Xác minh',
+                reEnter: 'Nhập lại', verified: 'Đã xác minh',
+                orderConfirm: 'Xác nhận đơn hàng', tokens: 'Số token', bonus: 'Token thưởng',
+                item: 'Mục', quantity: 'Số lượng', totalPrice: 'Tổng tiền：',
+                selectPayment: 'Chọn phương thức thanh toán',
+                confirmPayment: 'Xác nhận thanh toán',
+                purchaseLimit: 'Giới hạn mua：',
+                addToHome: 'Thêm vào màn hình chính',
+                termsOfService: 'Điều khoản dịch vụ', privacyPolicy: 'Chính sách bảo mật',
+                footerDesc: 'Nếu bạn gặp vấn đề trong thanh toán, hãy liên hệ support@game.mail hoặc trang Facebook.',
+                payModalTitle: 'Xác nhận đơn hàng', totalAmount: 'Tổng tiền',
+                tokenAmount: 'Số token', bonusTokens: 'Token thưởng',
+                giftPack: 'Gói quà', contents: 'Nội dung', bonusPts: 'Điểm thưởng',
+                qty: 'Số lượng', payMethod: 'Phương thức thanh toán', reVerify: 'Xác minh lại',
+                iCompletedPay: 'Đã hoàn tất thanh toán', cancelPay: 'Hủy',
+                qrTip: 'Vui lòng dùng {method} để quét mã QR thanh toán',
+                expiresIn: 'Hết hạn sau：{sec} giây',
+                paySuccess: 'Thanh toán thành công！', paySuccessSub: 'Token sẽ được cộng trong 5 phút. Cảm ơn！',
+                payFail: 'Chưa phát hiện thanh toán', payFailSub: 'Vui lòng xác nhận thanh toán rồi thử lại',
+                qrExpired: 'Mã QR hết hạn', qrExpiredSub: 'Vui lòng đóng và đặt lại', done: 'Hoàn tất',
+                noticePlaceholder: 'Chào mừng đến Trung tâm Nạp tiền Chính thức！Nạp ngay để nhận token thưởng！',
+            },
+        };
+        // 其余语言 fallback 到英文
+        ['fr','de','it','es','ru','pt'].forEach(function(l) { I18N[l] = I18N['en']; });
+
+        var _currentLang = 'en';
+
+        // 语言 → 默认货币映射（语言切换时，若无B端数据则用此货币）
+        var LANG_TO_CURRENCY = {
+            'zh-TW': { code:'HKD', symbol:'HK$' },
+            'ja-JP': { code:'JPY', symbol:'¥' },
+            'ko-KR': { code:'KRW', symbol:'₩' },
+            'th-TH': { code:'THB', symbol:'฿' },
+            'vi-VN': { code:'VND', symbol:'₫' },
+            'fr':    { code:'EUR', symbol:'€' },
+            'de':    { code:'EUR', symbol:'€' },
+            'it':    { code:'EUR', symbol:'€' },
+            'es':    { code:'EUR', symbol:'€' },
+            'ru':    { code:'RUB', symbol:'₽' },
+            'pt':    { code:'BRL', symbol:'R$' },
+            'en':    { code:'USD', symbol:'$' },
+        };
+
+        // 当前货币（由地区驱动，语言切换不影响货币）
+        window.__currentCurrency = { code:'USD', symbol:'$' };
+
+        // ── 支付方式 Mock 数据 ────────────────────────────────
+        var PAYMENT_META = {
+            visa:      { label:'Visa/MasterCard', img:'../images/visa.png' },
+            paypal:    { label:'PayPal',           img:'../images/pm_paypal.png' },
+            applepay:  { label:'Apple Pay',        img:'../images/pm_applepay.png' },
+            googlepay: { label:'Google Pay',       img:'../images/GooglePay.png' },
+        };
+        var REGION_DEFAULT_PAYMENTS = {
+            TW:['visa','paypal','googlepay'], JP:['visa','applepay','googlepay'],
+            KR:['visa','paypal','googlepay'], HK:['visa','paypal','applepay'],
+            ID:['visa','paypal','googlepay'], TH:['visa','paypal','googlepay'],
+            VN:['visa','paypal','googlepay'], PH:['visa','paypal','googlepay'],
+            SG:['visa','paypal','applepay','googlepay'], MY:['visa','paypal','googlepay'],
+            IN:['visa','paypal','googlepay'], AU:['visa','paypal','applepay','googlepay'],
+            NZ:['visa','paypal','applepay'],
+            UK:['visa','paypal','applepay','googlepay'], FR:['visa','paypal','applepay'],
+            DE:['visa','paypal','googlepay'], IT:['visa','paypal'],
+            ES:['visa','paypal'], RU:['visa'],
+            US:['visa','paypal','applepay','googlepay'], CA:['visa','paypal','applepay','googlepay'],
+            MX:['visa','paypal'], BR:['visa','paypal'], AR:['visa','paypal'], CL:['visa','paypal'],
+            SA:['visa','paypal'], AE:['visa','paypal','applepay'], TR:['visa','paypal'], ZA:['visa','paypal'],
+            Others:['visa','paypal','applepay','googlepay'],
+        };
+        var _currentPayMethod = null;
+
+        function getRegionPayments(regionCode) {
+            // 优先从 B 端数据提取 paymentChannel
+            var bTiers = window.__currentTiers || [];
+            var channels = [];
+            bTiers.forEach(function(c) {
+                if (c.paymentChannel && c.paymentChannel !== 'Others') {
+                    var ch = c.paymentChannel.toLowerCase().replace(/\s/g,'');
+                    if (channels.indexOf(ch) === -1) channels.push(ch);
+                }
+            });
+            if (channels.length > 0) return channels;
+            return REGION_DEFAULT_PAYMENTS[regionCode] || REGION_DEFAULT_PAYMENTS['Others'];
+        }
+
+        // 渲染右栏支付方式列表
+        function renderRightPanelPayments(regionCode) {
+            var container = document.getElementById('osPayMethodList');
+            if (!container) return;
+            var methods = getRegionPayments(regionCode);
+            _currentPayMethod = methods[0] || null;
+            container.innerHTML = methods.map(function(m, i) {
+                var meta = PAYMENT_META[m]; if (!meta) return '';
+                return '<div class="os-pay-item' + (i === 0 ? ' active' : '') + '" data-method="' + m + '" onclick="osPcSelectPay(\'' + m + '\')">'
+                    + '<img class="os-pay-logo" src="' + meta.img + '" alt="' + meta.label + '">'
+                    + '<span class="os-pay-name">' + meta.label + '</span></div>';
+            }).join('');
+        }
+
+        // 渲染支付弹窗内支付方式
+        function renderModalPayments(regionCode) {
+            var container = document.getElementById('osPmPaymentOptions');
+            if (!container) return;
+            var methods = getRegionPayments(regionCode);
+            container.innerHTML = methods.map(function(m, i) {
+                var meta = PAYMENT_META[m]; if (!meta) return '';
+                return '<div class="os-pm-pay-item' + (i === 0 ? ' selected' : '') + '" data-method="' + m + '" onclick="osPmSelectMethod(\'' + m + '\')">'
+                    + '<img class="os-pm-pay-logo" src="' + meta.img + '" alt="' + meta.label + '">'
+                    + '<span class="os-pm-pay-name">' + meta.label + '</span></div>';
+            }).join('');
+            // 初始化 QR 提示文字
+            var nameEl = document.getElementById('osPmMethodName');
+            if (nameEl && methods[0]) nameEl.textContent = (PAYMENT_META[methods[0]] || {}).label || methods[0];
+        }
+
+        function osPcSelectPay(method) {
+            _currentPayMethod = method;
+            document.querySelectorAll('.os-pay-item').forEach(function(el) {
+                el.classList.toggle('active', el.getAttribute('data-method') === method);
+            });
+        }
+
+        function osPmSelectMethod(method) {
+            document.querySelectorAll('.os-pm-pay-item').forEach(function(el) {
+                el.classList.toggle('selected', el.getAttribute('data-method') === method);
+            });
+            var meta = PAYMENT_META[method];
+            var nameEl = document.getElementById('osPmMethodName');
+            if (nameEl) nameEl.textContent = meta ? meta.label : method;
+        }
+
+        // 格式化价格：货币代码 + 空格 + 整数千位格式，如 "TWD 32,240"
+        function _formatPrice(priceNum) {
+            if (!priceNum && priceNum !== 0) return '';
+            var code = (window.__currentCurrency && window.__currentCurrency.code) || 'USD';
+            var num = Math.round(priceNum / 100);
+            return code + ' ' + num.toLocaleString();
+        }
+
+        // 更新货币并刷新所有静态价格显示
+        function applyCurrency(currencyCode, currencySymbol) {
+            window.__currentCurrency = { code: currencyCode, symbol: currencySymbol };
+            // 更新静态档位卡片：格式 "TWD 6,000"
+            document.querySelectorAll('.tier-price-btn').forEach(function(el) {
+                var raw = el.textContent.replace(/[^0-9]/g, '');
+                if (raw) el.textContent = currencyCode + ' ' + parseInt(raw).toLocaleString();
+            });
+            // 更新静态礼包货币代码
+            document.querySelectorAll('.gift-price-currency').forEach(function(el) {
+                el.textContent = currencyCode;
+            });
+            // 更新订单信息卡总价
+            var totalEl = document.getElementById('orderInfoTotal');
+            if (totalEl && totalEl.textContent !== '—') {
+                var num = totalEl.textContent.replace(/[^0-9]/g, '');
+                if (num) totalEl.textContent = currencyCode + ' ' + parseInt(num).toLocaleString();
+            }
+            // 更新支付弹窗总价
+            var pmTotal = document.getElementById('osPmTotalPrice');
+            if (pmTotal) {
+                var pmNum = pmTotal.textContent.replace(/[^0-9]/g, '');
+                if (pmNum) pmTotal.textContent = currencyCode + ' ' + parseInt(pmNum).toLocaleString();
+            }
+        }
+
+        function t(key) {
+            var tr = I18N[_currentLang] || I18N['en'];
+            return tr[key] || I18N['en'][key] || key;
+        }
+
+        function applyI18n(lang) {
+            _currentLang = lang;
+            // Tab 按钮
+            var tabCoinBtn = document.querySelector('.tab-btn[onclick*="coin"]');
+            var tabGiftBtn = document.querySelector('.tab-btn[onclick*="gift"]');
+            if (tabCoinBtn) tabCoinBtn.textContent = t('tabCoin');
+            if (tabGiftBtn) tabGiftBtn.textContent = t('tabGift');
+            // 代币档位标题
+            var cardTitle = document.querySelector('.tab-container .card-title');
+            if (cardTitle) cardTitle.textContent = t('selectAmount');
+            // 右栏各标题
+            var elMap = {
+                'roleVerifyTitle': 'roleVerify',
+                'orderConfirmTitle': 'orderConfirm',
+                'payMethodTitle': 'selectPayment',
+            };
+            Object.keys(elMap).forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) el.textContent = t(elMap[id]);
+            });
+            // 角色验证表单
+            var charIdLabel = document.getElementById('charIdLabel');
+            if (charIdLabel) charIdLabel.textContent = t('characterId');
+            var roleIdInput = document.getElementById('roleIdInput');
+            if (roleIdInput) roleIdInput.placeholder = t('roleIdPlaceholder');
+            var verifyBtnEl = document.getElementById('verifyBtnEl');
+            if (verifyBtnEl) verifyBtnEl.textContent = t('verifyBtn');
+            var reEnterEl = document.getElementById('reEnterBtn');
+            if (reEnterEl) reEnterEl.textContent = t('reEnter');
+            // 订单信息卡
+            var orderTokenLabel = document.getElementById('orderTokenLabel');
+            if (orderTokenLabel) orderTokenLabel.textContent = t('tokens');
+            var orderBonusLabel = document.getElementById('orderBonusLabel');
+            if (orderBonusLabel) orderBonusLabel.textContent = t('bonus');
+            var orderItemLabel = document.getElementById('orderItemLabel');
+            if (orderItemLabel) orderItemLabel.textContent = t('item');
+            var orderQtyLabel = document.getElementById('orderQtyLabel');
+            if (orderQtyLabel) orderQtyLabel.textContent = t('quantity');
+            var orderTotalLabel = document.getElementById('orderTotalLabel');
+            if (orderTotalLabel) orderTotalLabel.textContent = t('totalPrice');
+            // 确认支付按钮
+            var confirmBtnEl = document.getElementById('confirmPayBtn');
+            if (confirmBtnEl) confirmBtnEl.textContent = t('confirmPayment');
+            // Add to Home Screen
+            var addHomeSpan = document.getElementById('addHomeText');
+            if (addHomeSpan) addHomeSpan.textContent = t('addToHome');
+            // 页脚
+            var tosEl = document.getElementById('footerTos');
+            if (tosEl) tosEl.textContent = t('termsOfService');
+            var ppEl = document.getElementById('footerPp');
+            if (ppEl) ppEl.textContent = t('privacyPolicy');
+            var fdEl = document.getElementById('footerDesc');
+            if (fdEl) fdEl.textContent = t('footerDesc');
+            // 支付弹窗
+            var pmTitle = document.getElementById('osPayModalTitle');
+            if (pmTitle) pmTitle.textContent = t('payModalTitle');
+            var pmTierLbl = document.getElementById('osPmTierLabel');
+            if (pmTierLbl) pmTierLbl.textContent = t('tokenAmount');
+            var pmBonusLbl = document.getElementById('osPmBonusLabel');
+            if (pmBonusLbl) pmBonusLbl.textContent = t('bonusTokens');
+            var pmGiftLbl = document.getElementById('osPmGiftLabel');
+            if (pmGiftLbl) pmGiftLbl.textContent = t('giftPack');
+            var pmContLbl = document.getElementById('osPmContLabel');
+            if (pmContLbl) pmContLbl.textContent = t('contents');
+            var pmPtsLbl = document.getElementById('osPmPtsLabel');
+            if (pmPtsLbl) pmPtsLbl.textContent = t('bonusPts');
+            var pmQtyLbl = document.getElementById('osPmQtyLabel');
+            if (pmQtyLbl) pmQtyLbl.textContent = t('qty');
+            var pmPayLbl = document.getElementById('osPmPayLabel');
+            if (pmPayLbl) pmPayLbl.textContent = t('payMethod');
+            var pmTotalLbl = document.getElementById('osPmTotalLabel');
+            if (pmTotalLbl) pmTotalLbl.textContent = t('totalAmount');
+            var pmDoneBtn = document.getElementById('osPmDoneBtn');
+            if (pmDoneBtn) pmDoneBtn.textContent = t('iCompletedPay');
+            var pmCancelLink = document.getElementById('osPmCancelLink');
+            if (pmCancelLink) pmCancelLink.textContent = t('cancelPay');
+            // 通知栏默认文案
+            var noticeEl = document.getElementById('noticeText');
+            if (noticeEl && noticeEl.dataset.isDefault === 'true') {
+                noticeEl.textContent = t('noticePlaceholder');
+            }
+        }
+
+        function selectLang(lang, label) {
+            _userHasInteracted = true; // 用户主动切语言，禁止 IP 定位覆盖
+            window.__bCurrentLang = lang;
+            var LANG_SHORT = { 'zh-CN':'简体', 'zh-TW':'繁體', 'ja-JP':'日本語', 'ko-KR':'한국어', 'th-TH':'ไทย', 'vi-VN':'Việt', 'en':'EN', 'fr':'FR', 'de':'DE', 'it':'IT', 'es':'ES', 'ru':'RU', 'pt':'PT' };
+            document.getElementById('currentLangLabel').textContent = LANG_SHORT[lang] || lang.toUpperCase().slice(0,2);
+            document.getElementById('langDropdown').classList.remove('open');
+            document.querySelectorAll('#langList .lang-item').forEach(function(el) {
+                el.classList.toggle('active', el.getAttribute('data-lang') === lang);
+            });
+            if (window.__applyBanner) window.__applyBanner(lang);
+            if (window.__applyNotice) window.__applyNotice(lang);
+            applyI18n(lang);
+            // 语言切换只切 UI 文字，不影响货币和支付方式
+        }
+
+        // 点击外部关闭所有下拉
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.region-selector') && !e.target.closest('#regionDropdown')) {
+                document.getElementById('regionDropdown').classList.remove('open');
+            }
+            if (!e.target.closest('.lang-selector') && !e.target.closest('#langDropdown')) {
+                document.getElementById('langDropdown').classList.remove('open');
+            }
+            if (!e.target.closest('.user-avatar') && !e.target.closest('.user-dropdown')) {
+                var dd = document.getElementById('userDropdown');
+                if (dd) dd.classList.remove('show');
+            }
+        });
+
+        function toggleUserDropdown() {
+            var dd = document.getElementById('userDropdown');
+            if (dd) dd.classList.toggle('show');
+        }
+
+        // 用户是否已主动操作地区/语言（一旦为 true，IP 自动定位不再覆盖）
+        var _userHasInteracted = false;
+
+        // ── IP 自动定位（使用免费公共 API，失败则静默回落） ──
+        (function autoDetectRegion() {
+            var apiUrls = [
+                'https://ipapi.co/json/',
+                'https://ipinfo.io/json'
+            ];
+            var tried = 0;
+            function tryNext() {
+                if (tried >= apiUrls.length) return;
+                fetch(apiUrls[tried++])
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        // 用户已主动操作，不覆盖
+                        if (_userHasInteracted) return;
+                        var cc = (data.country_code || data.country || '').toUpperCase();
+                        if (cc && window.selectRegion && typeof window.selectRegion === 'function') {
+                            var configuredRegions = window.__configuredRegionsPc || [];
+                            if (cc === 'GB') cc = 'UK';
+                            if (configuredRegions.indexOf(cc) !== -1) {
+                                window.selectRegion(cc, true); // true = 来自 IP 定位
+                            } else if (configuredRegions.indexOf('Others') !== -1) {
+                                window.selectRegion('Others', true);
+                            }
+                        }
+                    })
+                    .catch(tryNext);
+            }
+            setTimeout(tryNext, 300);
+        })();
+
+        function sendCode() {
+            var btn = document.getElementById('sendCodeBtn');
+            var email = document.getElementById('emailInput');
+            if (!email || !email.value.trim()) {
+                alert('Please enter your email first.');
+                return;
+            }
+            var sec = 60;
+            btn.disabled = true;
+            btn.textContent = sec + 's';
+            var timer = setInterval(function() {
+                sec--;
+                if (sec <= 0) {
+                    clearInterval(timer);
+                    btn.disabled = false;
+                    btn.textContent = 'Send Code';
+                } else {
+                    btn.textContent = sec + 's';
+                }
+            }, 1000);
+        }
+
+        function selectPayMethod(btn) {
+            document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        function doLogout() {
+            _osCurrentUser = null;
+            document.getElementById('loginForm').style.display = 'block';
+            document.getElementById('roleVerified').style.display = 'none';
+            document.getElementById('userInfo').classList.remove('show');
+            document.getElementById('loginBtn').style.display = '';
+            if (document.getElementById('roleIdInput')) document.getElementById('roleIdInput').value = '';
+            var roleEl = document.getElementById('orderInfoRoleLine');
+            if (roleEl) roleEl.style.display = 'none';
+            var dd = document.getElementById('userDropdown');
+            if (dd) dd.classList.remove('show');
+        }
+
+        // ── 海外PC支付弹窗 ────────────────────────────────────
+        var _osPmQty = 1;
+        var _osPmBasePrice = 0;
+        var _osPmBasePoints = 0;
+        var _osPmTimer = null;
+        var _osCurrentUser = null;
+
+        function openOsPayModal(type, data) {
+            _osPmQty = data._qty || 1;
+            _osPmBasePrice = 0;
+            _osPmBasePoints = 0;
+            document.getElementById('osPmQtyInput').value = _osPmQty;
+            document.getElementById('osPmDecBtn').disabled = true;
+            document.getElementById('osPmIncBtn').disabled = false;
+            document.getElementById('osPayResultOverlay').classList.remove('show');
+
+            var roleBar = document.getElementById('osPmRoleInfo');
+            if (_osCurrentUser) {
+                roleBar.style.display = 'flex';
+                document.getElementById('osPmRoleName').textContent = _osCurrentUser;
+            } else {
+                roleBar.style.display = 'none';
+            }
+
+            if (type === 'tier') {
+                document.getElementById('osPmTierFields').style.display = 'flex';
+                document.getElementById('osPmBonusFields').style.display = 'flex';
+                document.getElementById('osPmGiftNameField').style.display = 'none';
+                document.getElementById('osPmGiftContentField').style.display = 'none';
+                document.getElementById('osPmPointsFields').style.display = 'flex';
+                var tokenEl = document.getElementById('osPmTokenAmount');
+                var bonusEl = document.getElementById('osPmBonusAmount');
+                tokenEl.textContent = data.coinAmount || '';
+                tokenEl.dataset.base = data.coinAmount || 0;
+                bonusEl.textContent = data.bonusCoin !== undefined ? data.bonusCoin : 0;
+                bonusEl.dataset.base = data.bonusCoin || 0;
+                _osPmBasePrice = data.priceNum || 0;
+                _osPmBasePoints = _osPmBasePrice > 0 ? Math.round(_osPmBasePrice / 100 * 100) : 0;
+                document.getElementById('osPmPointsAmount').textContent = _osPmBasePoints;
+                document.getElementById('osPmTotalPrice').textContent = _formatPrice(data.priceNum) || data.price;
+            } else {
+                document.getElementById('osPmTierFields').style.display = 'none';
+                document.getElementById('osPmBonusFields').style.display = 'none';
+                document.getElementById('osPmGiftNameField').style.display = 'flex';
+                document.getElementById('osPmGiftContentField').style.display = 'flex';
+                document.getElementById('osPmPointsFields').style.display = 'flex';
+                document.getElementById('osPmGiftName').textContent = data.name;
+                document.getElementById('osPmGiftContent').textContent = data.content || '';
+                _osPmBasePrice = data.priceNum || 0;
+                _osPmBasePoints = _osPmBasePrice > 0 ? Math.round(_osPmBasePrice / 100 * 100) : 0;
+                document.getElementById('osPmPointsAmount').textContent = _osPmBasePoints;
+                document.getElementById('osPmTotalPrice').textContent = _formatPrice(data.priceNum) || data.price;
+            }
+
+            // 确保弹窗支付方式与当前地区一致
+            renderModalPayments(window.__currentRegionCode || 'Others');
+            _osPmStartTimer();
+            document.getElementById('osPayModal').classList.add('show');
+        }
+
+        function closeOsPayModal() {
+            if (_osPmTimer) { clearInterval(_osPmTimer); _osPmTimer = null; }
+            document.getElementById('osPayModal').classList.remove('show');
+            setTimeout(function() {
+                document.getElementById('osPayResultOverlay').classList.remove('show');
+            }, 300);
+        }
+
+        function osPmSelectMethod(method) {
+            var methods = ['paypal', 'card', 'google', 'apple'];
+            var names = { paypal:'PayPal', card:'Credit Card', google:'Google Pay', apple:'Apple Pay' };
+            methods.forEach(function(m) {
+                var el = document.getElementById('osPmOpt' + m.charAt(0).toUpperCase() + m.slice(1));
+                if (el) el.classList.toggle('selected', m === method);
+            });
+            document.getElementById('osPmMethodName').textContent = names[method] || method;
+        }
+
+        function osPmDecQty() { if (_osPmQty > 1) { _osPmQty--; _osPmRefreshQty(); } }
+        function osPmIncQty() { if (_osPmQty < 99) { _osPmQty++; _osPmRefreshQty(); } }
+        function osPmUpdateQty() {
+            var v = parseInt(document.getElementById('osPmQtyInput').value) || 1;
+            _osPmQty = Math.max(1, Math.min(99, v));
+            _osPmRefreshQty();
+        }
+        function _osPmRefreshQty() {
+            document.getElementById('osPmQtyInput').value = _osPmQty;
+            document.getElementById('osPmDecBtn').disabled = _osPmQty <= 1;
+            document.getElementById('osPmIncBtn').disabled = _osPmQty >= 99;
+            if (_osPmBasePrice > 0) {
+                var totalNum = _osPmBasePrice * _osPmQty / 100;
+                var curCode = (window.__currentCurrency && window.__currentCurrency.code) || 'USD';
+                document.getElementById('osPmTotalPrice').textContent = curCode + ' ' + Math.round(totalNum).toLocaleString();
+                var tokenEl = document.getElementById('osPmTokenAmount');
+                var bonusEl = document.getElementById('osPmBonusAmount');
+                if (tokenEl && tokenEl.dataset.base) tokenEl.textContent = parseInt(tokenEl.dataset.base) * _osPmQty;
+                if (bonusEl && bonusEl.dataset.base) bonusEl.textContent = parseInt(bonusEl.dataset.base) * _osPmQty;
+                document.getElementById('osPmPointsAmount').textContent = _osPmBasePoints * _osPmQty;
+            }
+        }
+
+        function _osPmStartTimer() {
+            if (_osPmTimer) clearInterval(_osPmTimer);
+            var sec = 300;
+            document.getElementById('osPmCountdown').textContent = sec;
+            _osPmTimer = setInterval(function() {
+                sec--;
+                var el = document.getElementById('osPmCountdown');
+                if (el) el.textContent = sec;
+                if (sec <= 0) {
+                    clearInterval(_osPmTimer); _osPmTimer = null;
+                    _osPmShowResult(false, 'QR Code Expired', 'Please close and reorder');
+                }
+            }, 1000);
+        }
+
+        function osPmVerifyPayment() {
+            var ok = Math.random() < 0.8;
+            if (ok) {
+                _osPmShowResult(true, 'Payment Successful!', 'Tokens will be credited within 5 minutes. Thank you!');
+            } else {
+                _osPmShowResult(false, 'Payment Not Detected', 'Please confirm payment on your device and try again');
+            }
+        }
+
+        function _osPmShowResult(success, title, sub) {
+            if (_osPmTimer) { clearInterval(_osPmTimer); _osPmTimer = null; }
+            document.getElementById('osPayResultIcon').textContent = success ? '✅' : '⚠️';
+            document.getElementById('osPayResultTitle').textContent = title;
+            document.getElementById('osPayResultTitle').style.color = success ? '#52c41a' : '#fa8c16';
+            document.getElementById('osPayResultSub').textContent = sub;
+            document.getElementById('osPayResultOverlay').classList.add('show');
+        }
+
+        // 点击弹窗背景关闭
+        document.addEventListener('click', function(e) {
+            if (e.target.id === 'osPayModal') closeOsPayModal();
+        });
+
+        // 登录后更新用户状态
+        function doLogin() {
+            var roleId = document.getElementById('roleIdInput');
+            if (!roleId || !roleId.value.trim()) { alert('Please enter your Role ID.'); return; }
+            _osCurrentUser = roleId.value.trim();
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('roleVerified').style.display = 'block';
+            document.getElementById('verifiedRoleId').textContent = 'Role ID: ' + _osCurrentUser;
+            document.getElementById('userInfo').classList.add('show');
+            document.getElementById('userNameDisplay').textContent = _osCurrentUser;
+            document.getElementById('loginBtn').style.display = 'none';
+            // 同步更新订单信息中的角色名
+            var roleEl = document.getElementById('orderInfoRoleLine');
+            if (roleEl) { roleEl.textContent = '(No.: ' + _osCurrentUser + ')'; roleEl.style.display = 'block'; }
+        }
+    </script>
+
+    <!-- 主题颜色 postMessage 监听 -->
+    <script>
+    window.addEventListener('message', function(e) {
+        var d = e.data;
+        if (!d || d.type !== 'THEME_UPDATE') return;
+        var r = document.documentElement.style;
+        if (d.pageBackground  !== undefined) r.setProperty('--theme-page-bg',     d.pageBackground);
+        if (d.navBar          !== undefined) r.setProperty('--theme-nav-bg',       d.navBar);
+        if (d.noticeBg        !== undefined) r.setProperty('--theme-notice-bg',    d.noticeBg);
+        if (d.authModule      !== undefined) r.setProperty('--theme-auth-bg',      d.authModule);
+        if (d.rechargeModule  !== undefined) r.setProperty('--theme-recharge-bg',  d.rechargeModule);
+        if (d.footer          !== undefined) r.setProperty('--theme-footer-bg',    d.footer);
+        if (d.modalBg         !== undefined) r.setProperty('--theme-modal-bg',     d.modalBg);
+        if (d.drawerBg        !== undefined) r.setProperty('--theme-drawer-bg',    d.drawerBg);
+    });
+    </script>
+
+    <!-- PRD 按钮 -->
+    <button id="prdFloatBtn" onclick="openPrdPanel()" title="查看PRD文档">PRD</button>
+    <script>if (window !== window.top) { document.getElementById('prdFloatBtn').style.display = 'none'; }</script>
+
+    <!-- PRD 侧面板 -->
+    <div id="prdPanel">
+        <div id="prdPanelHeader">
+            <span>📄 PRD 文档</span>
+            <button onclick="closePrdPanel()">✕</button>
+        </div>
+        <div id="prdPanelMain">
+            <div id="prdVersionSidebar">
+                <div class="prd-version-title">版本历史</div>
+                <ul id="prdVersionList"></ul>
+                <div id="prdTocBox">
+                    <div class="prd-toc-title">目录</div>
+                    <ul id="prdTocList"></ul>
+                </div>
+            </div>
+            <div id="prdPanelBody">加载中…</div>
+        </div>
+    </div>
+
+    <style>
+        #prdFloatBtn {
+            position: fixed;
+            top: 60px;
+            right: 16px;
+            padding: 6px 14px;
+            background: #722ed1;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            z-index: 8000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+            transition: background 0.2s;
+        }
+        #prdFloatBtn:hover { background: #531dab; }
+        
+        .prd-mermaid-wrap { text-align:center; background:#fafbfc; border:1px solid #e4e7ed; border-radius:8px; padding:20px; margin:16px 0; overflow-x:auto; }
+        .prd-mermaid-wrap svg { max-width:100%; height:auto; }
+        #prdPanel {
+            display: none;
+            position: fixed;
+            top: 0; right: 0;
+            width: 700px; max-width: 96vw; height: 100vh;
+            background: #fff;
+            box-shadow: -4px 0 24px rgba(0,0,0,0.18);
+            z-index: 9000;
+            flex-direction: column;
+        }
+        #prdPanel.show { display: flex; }
+        #prdPanelHeader {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 20px;
+            background: #722ed1; color: white;
+            font-size: 15px; font-weight: 600; flex-shrink: 0;
+        }
+        #prdPanelHeader button { background: none; border: none; color: white; font-size: 20px; cursor: pointer; line-height: 1; }
+        #prdPanelMain { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+        #prdVersionSidebar {
+            width: 160px; flex-shrink: 0;
+            background: #f9f0ff; border-right: 1px solid #e9d8fd;
+            overflow-y: auto; padding: 12px 0;
+        }
+        .prd-version-title, .prd-toc-title {
+            font-size: 11px; font-weight: 600; color: #722ed1;
+            padding: 0 14px 8px; text-transform: uppercase; letter-spacing: 0.5px;
+            border-bottom: 1px solid #e9d8fd; margin-bottom: 4px;
+        }
+        .prd-toc-title { border-bottom: none; margin-bottom: 0; }
+        #prdVersionList { list-style: none; margin: 0; padding: 0; }
+        .prd-version-item {
+            padding: 10px 14px; cursor: pointer;
+            border-left: 3px solid transparent; transition: background 0.15s;
+        }
+        .prd-version-item:hover { background: #efe5ff; }
+        .prd-version-item.active { background: #efe5ff; border-left-color: #722ed1; }
+        .prd-version-label { font-size: 12px; font-weight: 600; color: #333; }
+        .prd-version-item.active .prd-version-label { color: #722ed1; }
+        .prd-version-date { font-size: 10px; color: #999; margin-top: 2px; }
+        #prdTocBox { border-top: 1px solid #e9d8fd; margin-top: 6px; padding-top: 8px; }
+        #prdTocList { list-style: none; margin: 0; padding: 0; }
+        .prd-toc-item {
+            padding: 5px 14px; cursor: pointer; font-size: 11px; line-height: 1.4; color: #555;
+            border-left: 3px solid transparent; transition: background 0.15s;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .prd-toc-item:hover { background: #efe5ff; color: #722ed1; }
+        .prd-toc-item.toc-h3 { padding-left: 24px; color: #888; font-size: 10.5px; }
+        .prd-toc-item.toc-h3:hover { color: #722ed1; }
+        .prd-toc-item.toc-active { background: #efe5ff; border-left-color: #722ed1; color: #722ed1; }
+        #prdPanelBody {
+            flex: 1; overflow-y: auto; min-height: 0;
+            padding: 24px 28px; font-size: 14px; line-height: 1.8; color: #333;
+        }
+        #prdPanelBody h1 { font-size: 20px; margin: 0 0 16px; color: #1a1a1a; }
+        #prdPanelBody h2 { font-size: 17px; margin: 28px 0 10px; color: #222; border-bottom: 2px solid #f0f0f0; padding-bottom: 6px; }
+        #prdPanelBody h3 { font-size: 15px; margin: 20px 0 8px; color: #333; }
+        #prdPanelBody h4 { font-size: 14px; margin: 16px 0 6px; color: #444; }
+        #prdPanelBody table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 13px; }
+        #prdPanelBody th { background: #f5f0ff; color: #531dab; padding: 7px 10px; text-align: left; border: 1px solid #e8e0f5; }
+        #prdPanelBody td { padding: 6px 10px; border: 1px solid #eee; vertical-align: top; }
+        #prdPanelBody tr:nth-child(even) td { background: #fafafa; }
+        #prdPanelBody code { background: #f5f5f5; padding: 1px 5px; border-radius: 3px; font-size: 12px; color: #c41d7f; }
+        #prdPanelBody pre { background: #f6f8fa; border-radius: 6px; padding: 14px; overflow-x: auto; font-size: 12px; line-height: 1.6; margin: 10px 0; }
+        #prdPanelBody pre code { background: none; padding: 0; color: #333; }
+        #prdPanelBody blockquote { border-left: 3px solid #722ed1; margin: 8px 0; padding: 6px 14px; background: #f9f0ff; color: #555; border-radius: 0 4px 4px 0; }
+        #prdPanelBody ul, #prdPanelBody ol { padding-left: 20px; margin: 6px 0; }
+        #prdPanelBody li { margin: 3px 0; }
+        #prdPanelBody hr { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+        #prdPanelBody a { color: #722ed1; }
+        #prdPanelBody strong { font-weight: 700; color: #1a1a1a; }
+    </style>
+
+    <script>
+        var prdVersions = [
+          {label:"v1.0 (最新)",date:"2026-04-16",content:"# 游戏充值中心（海外版 PC 端）- PRD\n\n**文档版本**：v1.0\n**创建日期**：2026-04-16\n\n---\n\n> **原型阶段说明**\n> 当前为产品原型阶段，页面内使用模拟数据展示效果。正式上线后，所有数据均从 B 端配置管理系统通过接口获取。\n\n---\n\n## 1. 产品概述\n\n海外版 PC 端充值页是海外充值站点的桌面端页面，可通过 `?site=站点名` 参数直接访问，也可在 B 端「主题颜色配置」的 iframe 中预览效果，或双击文件直接打开。\n\n### 1.1 整体布局\n\n```\n┌─────────────────────────────────────────────────────┐\n│ 顶部导航（Logo + OFFICIAL STORE + 右侧功能区）        │\n│ 右侧：客服图标 | 收藏图标 | 添加到桌面 | 语种选择 | 地区选择 │\n├─────────────────────────────────────────────────────┤\n│ Banner（全宽）                                        │\n├─────────────────────────────────────────────────────┤\n│ 通知栏                                                │\n├────────────────────────────────┬────────────────────┤\n│ 左栏（flex:1）                  │ 右栏（320px，固定）  │\n│  Tab：代币充值 / 道具礼包        │  角色验证           │\n│  代币档位（4列网格）             │  订单确认卡（常驻）  │\n│  礼包列表                       │  支付方式列表        │\n│                                 │  [总价 + 确认支付]   │\n└────────────────────────────────┴────────────────────┘\n│ 页脚（社交图标 + 协议链接 + 说明文字）                 │\n└─────────────────────────────────────────────────────┘\n```\n\n**主内容区最大宽度**：1400px\n\n---\n\n## 2. 数据来源与接入\n\n通过 URL 参数 `?site=站点名` 加载 B 端数据，规则与海外移动端一致。\n\n---\n\n## 3. 地区 / 语言 / 货币联动规则\n\n与海外移动端一致（见海外移动端 PRD § 3），PC 端额外说明：\n\n- 地区切换后自动同步语种选择器的当前显示值\n- 地区切换后自动选中第一个档位并更新右栏订单确认卡\n\n---\n\n## 4. 地区选择器（五大洲分组）\n\n- **Others** 置顶（蓝色背景标识）\n- 其余地区按五大洲分组：Asia Pacific / Europe / North America / South America / Middle East & Africa\n- 支持约 30 个地区\n\n---\n\n## 5. Banner 展示规则\n\n规则与海外移动端一致（见海外移动端 PRD § 4）。\n\n---\n\n## 6. 通知栏展示规则\n\n规则与海外移动端一致（见海外移动端 PRD § 5）。\n\n---\n\n## 7. 代币档位卡片结构（PC 端 4 列）\n\n```\n┌────────────────────┐\n│ +15%    [HOT]      │  ← 赠送百分比角标（左上）+ HOT标签（右上）\n│ [充值项图片，4:3]   │  ← tier-img-wrap\n│ [代币图]  10,000+  │  ← 代币行（img + 数量）\n│ [赠图]    1,500    │  ← 赠送代币行（有赠送时显示）\n│ [TWD 32,240]       │  ← 价格按钮（金色渐变）\n│ Purchase Limit: 1  │  ← 限购说明\n└────────────────────┘\n```\n\n| 图片 | 来源 | 默认 |\n|------|------|------|\n| 充值项大图 | 代币配置 `coinItemImage`（必填） | `images/充值项图片.png` |\n| 代币行图标 | 站点配置 `coinImage` | `images/代币图片.png` |\n| 赠送代币行图标 | 站点配置 `bonusCoinImage` | `images/赠送代币图片.png` |\n\n**价格格式**：货币代码 + 空格 + 整数千位分隔符，如 `TWD 32,240`、`USD 6`\n\n---\n\n## 8. 档位选择与支付方式联动\n\n```mermaid\nflowchart TD\n    A([用户点击「档位/礼包卡片」]) --> B[\"右栏订单确认卡实时更新\\n代币数量 / 赠送 / 价格\"]\n    B --> C[\"支付方式列表不刷新\\n保持当前已选状态\"]\n\n    D([用户切换地区]) --> E[\"刷新档位列表（按新地区）\"]\n    E --> F[\"刷新礼包列表（按新地区）\"]\n    F --> G[\"刷新右栏支付方式列表\"]\n    G --> H[\"刷新支付弹窗内支付方式列表\"]\n    H --> I[\"自动选中第一个档位\\n更新订单确认卡\"]\n\n    J([用户选择支付方式]) --> K[\"不触发档位/礼包刷新\"]\n```\n\n**支付方式来源优先级**：\n1. B 端当前档位列表中的 `paymentChannel` 字段（优先）\n2. 地区默认支付方式列表\n3. Others 默认列表（兜底）\n\n---\n\n## 9. 支付流程\n\n```mermaid\nflowchart TD\n    A([用户在右栏点击「Confirm Payment」]) --> B{是否已验证角色}\n    B -->|未验证| C[\"提示先验证角色ID\"]\n    C --> D\n    B -->|已验证| D[\"弹出支付弹窗\\n居中弹窗（480px宽）\"]\n    D --> E[\"展示：角色信息栏\\n订单明细（代币/赠送/礼包名称）\\n购买数量控制（1~99）\"]\n    E --> F([选择支付方式])\n    F --> G[\"展示二维码区域\\n300秒倒计时\\n「我已完成支付」按钮\"]\n    G --> H([点击「我已完成支付」])\n    H --> I{支付验证}\n    I -->|成功| J[\"结果覆盖层：支付成功 + 「完成」按钮\"]\n    I -->|失败| K[\"结果覆盖层：支付失败 + 「重试」选项\"]\n```\n\n---\n\n## 10. 语言与货币联动规则\n\n| 触发方式 | 语言变化 | 货币变化 |\n|---------|---------|---------|\n| 选择地区 | 自动切换为对应语言 | 切换为对应货币 |\n| 手动选语言 | 切换 UI 文案 | **不改变货币**（货币由地区决定） |\n\n**多语言（I18N）**：内置 6 种语言（EN / 繁中 / 日語 / 한국어 / ไทย / Việt），其余 fallback 到英文。\n\n---\n\n## 11. 角色验证\n\n右栏顶部：角色ID 输入框 + 验证按钮（横排布局）  \n验证成功后：显示角色ID + 「重新输入」链接\n\n---\n\n## 12. 主题颜色支持\n\n| B 端字段名 | 中文说明 | 对应 C 端区域 |\n|-----------|---------|--------------|\n| 页面背景色 | 整个充值页面的底色 | 页面 `body` 背景 |\n| 顶部导航栏 | 顶部 Logo 和功能按钮所在的导航条 | `.header` |\n| 通知栏 | Banner 下方公告横幅背景色 | `.notice-bar` |\n| 角色验证模块 | 右栏角色验证和订单确认区域背景色 | `.role-info-card` |\n| 充值模块 | 左栏 Tab 切换栏及档位/礼包内容区背景色 | `.tab-container` |\n| 页脚 | 底部社交媒体和协议链接区域背景色 | `.footer` |\n| 订单确认抽屉 | 支付弹窗背景色 | 支付弹窗 |\n\n---\n\n\n---\n\n## 测试账号（原型演示用）\n\n> 以下为原型阶段 Mock 数据，仅用于功能演示，上线后替换为真实接口。\n\n### 角色ID验证\n\n| 角色ID | 服务器 | 角色名 |\n|--------|--------|--------|\n| `10001` | Server 1 | Player001 |\n| `10002` | Server 2 | Player002 |\n| `10003` | Server 3 | Player003 |\n\n### 邮箱验证码登录（角色ID + 验证码）\n\n| 项目 | 值 |\n|------|-----|\n| 角色ID | `10001` / `10002` / `10003` |\n| 验证码 | `123456`（原型阶段 Mock 验证码，24小时有效，使用后失效） |\n\n\n## 版本历史\n\n| 版本 | 日期 | 修改内容 |\n|------|------|---------|\n| v1.0 | 2026-04-16 | 初始版本 |\n"}
+        ];
+        var prdCurrentVersion = 0;
+        var prdLoaded = false;
+
+        function openPrdPanel() {
+            document.getElementById('prdPanel').classList.add('show');
+            if (!prdLoaded) {
+                var ul = document.getElementById('prdVersionList');
+                ul.innerHTML = prdVersions.map(function(v, i) {
+                    return '<li class="prd-version-item' + (i===0?' active':'') + '" onclick="switchPrdVersion(' + i + ')" title="' + escAttrOs(v.label) + '">'
+                        + '<div class="prd-version-label">' + escHtmlOs(v.label) + '</div>'
+                        + '<div class="prd-version-date">' + escHtmlOs(v.date) + '</div>'
+                        + '</li>';
+                }).join('');
+                loadPrdVersion(0);
+                prdLoaded = true;
+            }
+        }
+        function closePrdPanel() { document.getElementById('prdPanel').classList.remove('show'); }
+        function switchPrdVersion(idx) {
+            if (idx === prdCurrentVersion) return;
+            prdCurrentVersion = idx;
+            document.querySelectorAll('.prd-version-item').forEach(function(el, i) { el.classList.toggle('active', i === idx); });
+            loadPrdVersion(idx);
+        }
+        function loadPrdVersion(idx) {
+            document.getElementById('prdPanelBody').innerHTML = renderMarkdownOs(prdVersions[idx].content);
+            document.getElementById('prdPanelBody').scrollTop = 0;
+            buildTocOs();
+            if (typeof mermaid !== 'undefined') {
+                setTimeout(function() {
+                    var blocks = document.querySelectorAll('#prdPanelBody pre > code.language-mermaid, #prdPanelBody code.language-mermaid:not(.mermaid-done)');
+                    blocks.forEach(async function(code) {
+                        code.classList.add('mermaid-done');
+                        var pre = code.parentElement;
+                        var id = 'mermaid-c-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+                        try { var r = await mermaid.render(id, code.textContent.trim()); var w = document.createElement('div'); w.className = 'prd-mermaid-wrap'; w.innerHTML = r.svg; pre.replaceWith(w); } catch(e) {}
+                    });
+                }, 0);
+            }
+        }
+        function buildTocOs() {
+            var body = document.getElementById('prdPanelBody');
+            var tocList = document.getElementById('prdTocList');
+            if (!body || !tocList) return;
+            var items = [];
+            body.querySelectorAll('h2, h3').forEach(function(h, i) {
+                var id = 'os-prd-anchor-' + i;
+                h.id = id;
+                var level = h.tagName.toLowerCase();
+                items.push('<li class="prd-toc-item toc-' + level + '" onclick="scrollTocOs(\'' + id + '\')" title="' + escAttrOs(h.textContent) + '">' + escHtmlOs(h.textContent) + '</li>');
+            });
+            tocList.innerHTML = items.join('');
+        }
+        function scrollTocOs(anchorId) {
+            var body = document.getElementById('prdPanelBody');
+            var target = document.getElementById(anchorId);
+            if (!body || !target) return;
+            document.querySelectorAll('.prd-toc-item').forEach(function(el) { el.classList.remove('toc-active'); });
+            document.querySelectorAll('.prd-toc-item').forEach(function(el) {
+                if (el.getAttribute('onclick') === "scrollTocOs('" + anchorId + "')") el.classList.add('toc-active');
+            });
+            body.scrollTo({ top: body.scrollTop + target.getBoundingClientRect().top - body.getBoundingClientRect().top - 16, behavior: 'smooth' });
+        }
+        function escHtmlOs(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        function escAttrOs(s) { return escHtmlOs(s).replace(/"/g,'&quot;'); }
+        function inlineFmtOs(s) {
+            s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+            s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            return s;
+        }
+        function renderTableOs(head, rows) {
+            var ths = head.split('|').slice(1,-1).map(function(c){return '<th>'+escHtmlOs(c.trim())+'</th>';}).join('');
+            var trs = rows.map(function(r){return '<tr>'+r.split('|').slice(1,-1).map(function(c){return '<td>'+escHtmlOs(c.trim())+'</td>';}).join('')+'</tr>';}).join('');
+            return '<table><thead><tr>'+ths+'</tr></thead><tbody>'+trs+'</tbody></table>';
+        }
+        function renderMarkdownOs(md) {
+            var lines = md.split('\n'), out = [], inCode = false, codeLang = '', codeBuf = [], inTable = false, tableHead = '', tableRows = [];
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i];
+                if (line.startsWith('```')) {
+                    if (inCode) { var cls=codeLang?' class="language-'+codeLang+'"':''; out.push('<pre><code'+cls+'>'+escHtmlOs(codeBuf.join('\n'))+'</code></pre>'); inCode=false; codeLang=''; codeBuf=[]; }
+                    else { inCode=true; codeLang=line.slice(3).trim(); }
+                    continue;
+                }
+                if (inCode) { codeBuf.push(line); continue; }
+                if (line.trim().startsWith('|')) {
+                    if (!inTable) { inTable=true; tableHead=line; tableRows=[]; }
+                    else if (/^[\s|:-]+$/.test(line)) { /* sep */ }
+                    else tableRows.push(line);
+                    continue;
+                } else if (inTable) { out.push(renderTableOs(tableHead, tableRows)); inTable=false; tableHead=''; tableRows=[]; }
+                if (!line.trim()) { out.push(''); continue; }
+                if (line.startsWith('#### ')) { out.push('<h4>'+escHtmlOs(line.slice(5))+'</h4>'); continue; }
+                if (line.startsWith('### '))  { out.push('<h3>'+escHtmlOs(line.slice(4))+'</h3>'); continue; }
+                if (line.startsWith('## '))   { out.push('<h2>'+escHtmlOs(line.slice(3))+'</h2>'); continue; }
+                if (line.startsWith('# '))    { out.push('<h1>'+escHtmlOs(line.slice(2))+'</h1>'); continue; }
+                if (line.startsWith('---'))   { out.push('<hr>'); continue; }
+                if (line.startsWith('> '))    { out.push('<blockquote>'+escHtmlOs(line.slice(2))+'</blockquote>'); continue; }
+                if (line.match(/^(\s*[-*]\s)/)) {
+                    var items = [];
+                    while (i < lines.length && lines[i].match(/^(\s*[-*]\s)/)) { items.push('<li>'+inlineFmtOs(escHtmlOs(lines[i].replace(/^\s*[-*]\s/,'')))+'</li>'); i++; }
+                    i--; out.push('<ul>'+items.join('')+'</ul>'); continue;
+                }
+                if (line.match(/^\d+\.\s/)) {
+                    var oitems = [];
+                    while (i < lines.length && lines[i].match(/^\d+\.\s/)) { oitems.push('<li>'+inlineFmtOs(escHtmlOs(lines[i].replace(/^\d+\.\s/,'')))+'</li>'); i++; }
+                    i--; out.push('<ol>'+oitems.join('')+'</ol>'); continue;
+                }
+                out.push('<p>'+inlineFmtOs(escHtmlOs(line))+'</p>');
+            }
+            if (inTable) out.push(renderTableOs(tableHead, tableRows));
+            return out.join('\n');
+        }
+        document.addEventListener('click', function(e) {
+            var panel = document.getElementById('prdPanel');
+            var btn = document.getElementById('prdFloatBtn');
+            if (panel && panel.classList.contains('show') && !panel.contains(e.target) && e.target !== btn) {
+                panel.classList.remove('show');
+            }
+        });
+    </script>
+
+
+</body>
+</html>
