@@ -147,9 +147,10 @@
             background: white;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            min-width: 220px;
+            min-width: 180px;
+            max-width: 240px;
             z-index: 9999;
-            max-height: 400px;
+            max-height: 320px;
             overflow-y: auto;
         }
 
@@ -158,22 +159,22 @@
         }
 
         .continent-header {
-            padding: 7px 14px 6px;
+            padding: 5px 10px 4px;
             background: linear-gradient(90deg, #4a90d9, #5ba3e8);
-            font-size: 12px;
+            font-size: 10px;
             font-weight: 700;
             color: white;
             letter-spacing: 0.3px;
         }
 
         .region-item {
-            padding: 12px 16px 12px 28px;
+            padding: 7px 10px 7px 14px;
             cursor: pointer;
             transition: background 0.2s;
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 14px;
+            gap: 6px;
+            font-size: 12px;
             color: #333;
             border-bottom: 1px solid #f5f5f5;
         }
@@ -275,7 +276,7 @@
         }
 
         .role-info-card {
-            background: white;
+            background: var(--theme-auth-bg, white);
             border-radius: 8px;
             margin: 0 15px 0;
             padding: 15px;
@@ -283,7 +284,7 @@
         }
 
         .tab-container {
-            background: white;
+            background: var(--theme-recharge-bg, white);
             margin: 15px 15px 0;
             border-radius: 8px 8px 0 0;
             padding: 8px 8px 0;
@@ -453,7 +454,7 @@
         }
 
         .package-section {
-            background: white;
+            background: var(--theme-recharge-bg, white);
             border-radius: 0 0 8px 8px;
             padding: 15px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
@@ -507,7 +508,7 @@
         }
 
         .help-content {
-            background: white;
+            background: var(--theme-modal-bg, white);
             border-radius: 12px;
             padding: 20px;
             width: 100%;
@@ -1273,6 +1274,13 @@
             display: flex;
             flex-direction: column;
             gap: 1px;
+            font-size: 11px;
+            color: #4a5568;
+            line-height: 1.4;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
         }
 
         .gift-item {
@@ -1623,11 +1631,49 @@
                 return list.find(function(s) { return s.name === SITE; }) || {};
             } catch(e) { return {}; }
         })();
+        // ── 读取页面内容配置 ──────────────────────────────────
+        var _pageContent = (function() {
+            try {
+                var p = new URLSearchParams(location.search);
+                var SITE = p.get('site') || '';
+                var list = JSON.parse(localStorage.getItem('page_content_data') || '[]');
+                return list.find(function(r) { return r.siteName === SITE && r.dataSource === 'overseas'; }) || {};
+            } catch(e) { return {}; }
+        })();
+        // ── 读取通知栏配置 ────────────────────────────────────
+        (function() {
+            try {
+                var p = new URLSearchParams(location.search);
+                var SITE = p.get('site') || '';
+                if (!SITE) return;
+                var notices = JSON.parse(localStorage.getItem('notification_config_data') || '[]')
+                    .filter(function(n) { return n.siteName === SITE && n.status === 2; });
+                if (!notices.length) return;
+                var now = Date.now();
+                var active = notices.filter(function(n) {
+                    if (!n.startTime && !n.endTime) return true;
+                    var s = n.startTime ? new Date(n.startTime).getTime() : 0;
+                    var e = n.endTime   ? new Date(n.endTime).getTime()   : Infinity;
+                    return now >= s && now <= e;
+                });
+                if (!active.length) return;
+                // 等 DOM 就绪后设置通知内容
+                var setText = function() {
+                    var el = document.getElementById('noticeText');
+                    if (el) el.textContent = active[0].content || '';
+                };
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', setText);
+                } else {
+                    setText();
+                }
+            } catch(e) {}
+        })();
 
         const translations = {
             'zh-CN': {
                 headerTitle: '官方充值中心',
-                tierTitle: '选择礼包',
+                tierTitle: '代币充值', giftTabTitle: '道具礼包',
                 drawerTitle: '订单摘要',
                 labelPackage: '选择套餐',
                 labelTokens: '代币数量',
@@ -1670,7 +1716,7 @@
             },
             'zh-TW': {
                 headerTitle: '官方儲值中心',
-                tierTitle: '選擇禮包',
+                tierTitle: '代幣充值', giftTabTitle: '道具禮包',
                 drawerTitle: '訂單摘要',
                 labelPackage: '選擇套餐',
                 labelTokens: '代幣數量',
@@ -1697,7 +1743,7 @@
             },
             'ja': {
                 headerTitle: '公式チャージ',
-                tierTitle: 'ギフトパック選択',
+                tierTitle: 'トークンチャージ', giftTabTitle: 'ギフトパック',
                 drawerTitle: '注文概要',
                 labelPackage: 'パッケージ',
                 labelTokens: 'トークン数',
@@ -1724,7 +1770,7 @@
             },
             'ko': {
                 headerTitle: '공식 충전',
-                tierTitle: '선물 패키지 선택',
+                tierTitle: '토큰 충전', giftTabTitle: '선물 팩',
                 drawerTitle: '주문 요약',
                 labelPackage: '패키지',
                 labelTokens: '토큰 수량',
@@ -1751,7 +1797,7 @@
             },
             'en': {
                 headerTitle: 'Official Recharge',
-                tierTitle: 'Select Package',
+                tierTitle: 'Token Top-Up', giftTabTitle: 'Gift Packs',
                 drawerTitle: 'Order Summary',
                 labelPackage: 'Package',
                 labelTokens: 'Tokens',
@@ -1778,7 +1824,7 @@
             },
             'th': {
                 headerTitle: 'ศูนย์เติมเงินอย่างเป็นทางการ',
-                tierTitle: 'เลือกแพ็กเกจ',
+                tierTitle: 'เติมโทเค็น', giftTabTitle: 'ชุดของขวัญ',
                 drawerTitle: 'สรุปคำสั่งซื้อ',
                 labelPackage: 'แพ็กเกจ',
                 labelTokens: 'จำนวนโทเค็น',
@@ -1805,7 +1851,7 @@
             },
             'vi': {
                 headerTitle: 'Trung Tâm Nạp Tiền Chính Thức',
-                tierTitle: 'Chọn Gói',
+                tierTitle: 'Nạp Token', giftTabTitle: 'Gói Quà',
                 drawerTitle: 'Tóm Tắt Đơn Hàng',
                 labelPackage: 'Gói',
                 labelTokens: 'Số Token',
@@ -1832,7 +1878,7 @@
             },
             'fr': {
                 headerTitle: 'Centre de Recharge Officiel',
-                tierTitle: 'Choisir un Pack',
+                tierTitle: 'Recharge Token', giftTabTitle: 'Packs Cadeaux',
                 drawerTitle: 'Récapitulatif',
                 labelPackage: 'Pack',
                 labelTokens: 'Jetons',
@@ -1859,7 +1905,7 @@
             },
             'de': {
                 headerTitle: 'Offizielle Aufladung',
-                tierTitle: 'Paket Wählen',
+                tierTitle: 'Token Aufladen', giftTabTitle: 'Geschenkpakete',
                 drawerTitle: 'Bestellübersicht',
                 labelPackage: 'Paket',
                 labelTokens: 'Token',
@@ -1884,10 +1930,10 @@
                 contactEmail: 'Fragen? Kontaktieren Sie<br>support@game.mail',
                 pointsMall: 'Punkte Shop'
             },
-            'it': { headerTitle:'Centro Ricarica Ufficiale', tierTitle:'Scegli Pacchetto', drawerTitle:'Riepilogo Ordine', labelPackage:'Pacchetto', labelTokens:'Token', labelBonus:'Bonus', paymentTitle:'Metodo di Pagamento', labelTotal:'Totale', payBtn:'Paga Ora', notSelected:'Non Selezionato', loginTitle:'Verifica ID', labelRoleId:'ID Personaggio', loginBtn:'Verifica & Accedi', roleIdPlaceholder:'Inserisci ID', roleInfoTitle:'Verifica Personaggio', verifyBtn:'Verifica', labelServer:'Server:', labelRoleName:'Nome:', reenterBtn:'Reinserisci', labelRoleInfo:'Info', labelQuantity:'Quantità', privacyPolicy:'Privacy', termsOfService:'Termini', contactEmail:'Domande? support@game.mail', pointsMall:'Negozio Punti' },
-            'es': { headerTitle:'Centro de Recarga Oficial', tierTitle:'Elegir Paquete', drawerTitle:'Resumen del Pedido', labelPackage:'Paquete', labelTokens:'Tokens', labelBonus:'Bonificación', paymentTitle:'Método de Pago', labelTotal:'Total', payBtn:'Pagar Ahora', notSelected:'No Seleccionado', loginTitle:'Verificación de ID', labelRoleId:'ID del Personaje', loginBtn:'Verificar y Entrar', roleIdPlaceholder:'Ingresa el ID', roleInfoTitle:'Verificación', verifyBtn:'Verificar', labelServer:'Servidor:', labelRoleName:'Nombre:', reenterBtn:'Reingresar', labelRoleInfo:'Info', labelQuantity:'Cantidad', privacyPolicy:'Privacidad', termsOfService:'Términos', contactEmail:'Preguntas? support@game.mail', pointsMall:'Tienda de Puntos' },
-            'ru': { headerTitle:'Официальное Пополнение', tierTitle:'Выбрать Пакет', drawerTitle:'Итого', labelPackage:'Пакет', labelTokens:'Токены', labelBonus:'Бонус', paymentTitle:'Способ Оплаты', labelTotal:'Итого', payBtn:'Оплатить', notSelected:'Не Выбрано', loginTitle:'Верификация ID', labelRoleId:'ID Персонажа', loginBtn:'Войти', roleIdPlaceholder:'Введите ID', roleInfoTitle:'Верификация', verifyBtn:'Подтвердить', labelServer:'Сервер:', labelRoleName:'Имя:', reenterBtn:'Ввести снова', labelRoleInfo:'Инфо', labelQuantity:'Кол-во', privacyPolicy:'Конфиденциальность', termsOfService:'Условия', contactEmail:'Вопросы? support@game.mail', pointsMall:'Магазин очков' },
-            'pt': { headerTitle:'Central de Recarga Oficial', tierTitle:'Escolher Pacote', drawerTitle:'Resumo do Pedido', labelPackage:'Pacote', labelTokens:'Tokens', labelBonus:'Bônus', paymentTitle:'Forma de Pagamento', labelTotal:'Total', payBtn:'Pagar', notSelected:'Não Selecionado', loginTitle:'Verificação de ID', labelRoleId:'ID do Personagem', loginBtn:'Verificar e Entrar', roleIdPlaceholder:'Digite o ID', roleInfoTitle:'Verificação', verifyBtn:'Verificar', labelServer:'Servidor:', labelRoleName:'Nome:', reenterBtn:'Reinserir', labelRoleInfo:'Info', labelQuantity:'Quantidade', privacyPolicy:'Privacidade', termsOfService:'Termos', contactEmail:'Dúvidas? support@game.mail', pointsMall:'Loja de Pontos' }
+            'it': { headerTitle:'Centro Ricarica Ufficiale', tierTitle:'Token Top-Up', giftTabTitle:'Gift Packs', drawerTitle:'Riepilogo Ordine', labelPackage:'Pacchetto', labelTokens:'Token', labelBonus:'Bonus', paymentTitle:'Metodo di Pagamento', labelTotal:'Totale', payBtn:'Paga Ora', notSelected:'Non Selezionato', loginTitle:'Verifica ID', labelRoleId:'ID Personaggio', loginBtn:'Verifica & Accedi', roleIdPlaceholder:'Inserisci ID', roleInfoTitle:'Verifica Personaggio', verifyBtn:'Verifica', labelServer:'Server:', labelRoleName:'Nome:', reenterBtn:'Reinserisci', labelRoleInfo:'Info', labelQuantity:'Quantità', privacyPolicy:'Privacy', termsOfService:'Termini', contactEmail:'Domande? support@game.mail', pointsMall:'Negozio Punti' },
+            'es': { headerTitle:'Centro de Recarga Oficial', tierTitle:'Token Top-Up', giftTabTitle:'Gift Packs', drawerTitle:'Resumen del Pedido', labelPackage:'Paquete', labelTokens:'Tokens', labelBonus:'Bonificación', paymentTitle:'Método de Pago', labelTotal:'Total', payBtn:'Pagar Ahora', notSelected:'No Seleccionado', loginTitle:'Verificación de ID', labelRoleId:'ID del Personaje', loginBtn:'Verificar y Entrar', roleIdPlaceholder:'Ingresa el ID', roleInfoTitle:'Verificación', verifyBtn:'Verificar', labelServer:'Servidor:', labelRoleName:'Nombre:', reenterBtn:'Reingresar', labelRoleInfo:'Info', labelQuantity:'Cantidad', privacyPolicy:'Privacidad', termsOfService:'Términos', contactEmail:'Preguntas? support@game.mail', pointsMall:'Tienda de Puntos' },
+            'ru': { headerTitle:'Официальное Пополнение', tierTitle:'Token Top-Up', giftTabTitle:'Gift Packs', drawerTitle:'Итого', labelPackage:'Пакет', labelTokens:'Токены', labelBonus:'Бонус', paymentTitle:'Способ Оплаты', labelTotal:'Итого', payBtn:'Оплатить', notSelected:'Не Выбрано', loginTitle:'Верификация ID', labelRoleId:'ID Персонажа', loginBtn:'Войти', roleIdPlaceholder:'Введите ID', roleInfoTitle:'Верификация', verifyBtn:'Подтвердить', labelServer:'Сервер:', labelRoleName:'Имя:', reenterBtn:'Ввести снова', labelRoleInfo:'Инфо', labelQuantity:'Кол-во', privacyPolicy:'Конфиденциальность', termsOfService:'Условия', contactEmail:'Вопросы? support@game.mail', pointsMall:'Магазин очков' },
+            'pt': { headerTitle:'Central de Recarga Oficial', tierTitle:'Token Top-Up', giftTabTitle:'Gift Packs', drawerTitle:'Resumo do Pedido', labelPackage:'Pacote', labelTokens:'Tokens', labelBonus:'Bônus', paymentTitle:'Forma de Pagamento', labelTotal:'Total', payBtn:'Pagar', notSelected:'Não Selecionado', loginTitle:'Verificação de ID', labelRoleId:'ID do Personagem', loginBtn:'Verificar e Entrar', roleIdPlaceholder:'Digite o ID', roleInfoTitle:'Verificação', verifyBtn:'Verificar', labelServer:'Servidor:', labelRoleName:'Nome:', reenterBtn:'Reinserir', labelRoleInfo:'Info', labelQuantity:'Quantidade', privacyPolicy:'Privacidade', termsOfService:'Termos', contactEmail:'Dúvidas? support@game.mail', pointsMall:'Loja de Pontos' }
         };
 
         const tierData = [
@@ -1967,6 +2013,37 @@
         function renderGiftPackages() {
             const giftPackageList = document.getElementById('giftPackageList');
             const rate = regionCurrencyMap[currentRegion].rate;
+
+            // 优先使用动态加载的B端礼包数据
+            if (window.__dynamicOverseasGifts && window.__dynamicOverseasGifts.length > 0) {
+                giftPackageList.innerHTML = window.__dynamicOverseasGifts.map(function(g) {
+                    const priceNum = g.localPrice
+                        ? Math.round(g.localPrice / 100 * rate)
+                        : Math.round(parseFloat(g.amount || 0) * rate);
+                    const priceStr = priceNum.toLocaleString();
+                    const origNum = g.discountLocalPrice
+                        ? Math.round(g.discountLocalPrice / 100 * rate)
+                        : (g.originalLocalPrice ? Math.round(g.originalLocalPrice / 100 * rate) : 0);
+                    const origHtml = origNum > priceNum
+                        ? `<div class="gift-package-original-price">${origNum.toLocaleString()}</div>`
+                        : '';
+                    const giftId = g.id || g.rechargeItemId;
+                    return `<div class="gift-package-card" onclick="selectGiftPackage('${giftId}')">
+                        <div class="gift-package-image"><img src="${g.giftImage || 'images/libao.png'}" alt="${g.giftName}"></div>
+                        <div class="gift-package-content">
+                            <div class="gift-package-name">${g.giftName}</div>
+                            <div class="gift-package-items">${g.content || ''}</div>
+                            <div class="gift-package-limit">${g.activityTime || ''}</div>
+                        </div>
+                        <div class="gift-package-price-section">
+                            <div class="gift-package-currency">${currentCurrency}</div>
+                            <div class="gift-package-price">${priceStr}</div>
+                            ${origHtml}
+                        </div>
+                    </div>`;
+                }).join('');
+                return;
+            }
 
             giftPackageList.innerHTML = giftPackageData.map(gift => {
                 const priceNum = Math.round(gift.price * rate);
@@ -2278,12 +2355,40 @@
             _setText('privacyPolicy',    t.privacyPolicy);
             _setText('termsOfService',   t.termsOfService);
             _setText('pointsMallBtn',    t.pointsMall);
-            _setHTML('contactEmail',     t.contactEmail);
+            // 页脚内容（动态）
+            var _contactEl = document.getElementById('contactEmail');
+            if (_contactEl) {
+                var _fCfg = _pageContent.footerConfigs && _pageContent.footerConfigs[currentLang];
+                if (_fCfg && _fCfg.content) {
+                    _contactEl.innerHTML = _fCfg.content;
+                } else {
+                    _setHTML('contactEmail', t.contactEmail);
+                }
+            }
+            // 社交媒体（动态渲染）
+            var _socialLinks = _pageContent.footerConfigs && _pageContent.footerConfigs[currentLang]
+                ? _pageContent.footerConfigs[currentLang].socialLinks : null;
+            var _socialEl = document.querySelector('.social-links');
+            if (_socialEl && _socialLinks && _socialLinks.length) {
+                var PRESET_ICON = { facebook: 'images/Facebook.png', twitter: 'images/推特.png', discord: 'images/discord.png' };
+                _socialEl.innerHTML = _socialLinks.map(function(l) {
+                    var src = l.iconType === 'custom' ? l.customIcon : (PRESET_ICON[l.presetIcon] || '');
+                    if (!src) return '';
+                    return '<div class="social-link" onclick="window.open(\'' + l.url + '\',\'_blank\')">'
+                         + '<img src="' + src + '" alt="' + (l.presetIcon || 'social') + '" style="width:22px;height:22px;object-fit:contain;">'
+                         + '</div>';
+                }).join('');
+            }
             _setPlaceholder('roleIdInput',     t.roleIdPlaceholder);
             _setPlaceholder('roleIdInputCard', t.roleIdPlaceholder);
             // Tab 按钮（用 querySelector 更稳健）
             var tabBtns = document.querySelectorAll('.recharge-tab-btn');
-            if (tabBtns[0]) tabBtns[0].querySelector('span:first-child').textContent = t.tierTitle || 'Tokens';
+            if (tabBtns[0]) {
+                var span = tabBtns[0].querySelector('span:first-child');
+                if (span) span.textContent = t.tierTitle || 'Tokens';
+                else tabBtns[0].textContent = t.tierTitle || 'Tokens';
+            }
+            if (tabBtns[1]) tabBtns[1].textContent = t.giftTabTitle || 'Gift Packs';
         }
 
         function verifyRole() {
@@ -2491,9 +2596,15 @@
         function showHelpModal() {
             const t = translations[currentLang];
             document.getElementById('helpTitle').textContent = t.helpTitle;
-            
             const helpSections = document.getElementById('helpSections');
-            helpSections.innerHTML = `
+            // 优先读 B 端代币充值说明配置
+            const matCfg = _pageContent.materialConfigs && _pageContent.materialConfigs[currentLang];
+            const matCfgFallback = _pageContent.materialConfigs && (_pageContent.materialConfigs['en'] || Object.values(_pageContent.materialConfigs)[0]);
+            const coinContent = (matCfg && matCfg.coinRechargeGuide) || (matCfgFallback && matCfgFallback.coinRechargeGuide);
+            if (coinContent) {
+                helpSections.innerHTML = `<div class="help-section"><div class="help-section-content">${coinContent}</div></div>`;
+            } else {
+                helpSections.innerHTML = `
                 <div class="help-section">
                     <div class="help-section-title">
                         <span class="help-section-icon">💰</span>
@@ -2523,7 +2634,7 @@
                     <div class="help-section-content">${t.helpSection4Content}</div>
                 </div>
             `;
-            
+            }
             document.getElementById('helpModal').classList.add('show');
         }
 
@@ -2534,9 +2645,15 @@
         function showRoleIdHelpModal() {
             const t = translations[currentLang];
             document.getElementById('helpTitle').textContent = t.roleIdHelpTitle || '如何获取角色ID？';
-            
             const helpSections = document.getElementById('helpSections');
-            helpSections.innerHTML = `
+            // 优先读 B 端素材配置
+            const matCfg = _pageContent.materialConfigs && _pageContent.materialConfigs[currentLang];
+            const matCfgFallback = _pageContent.materialConfigs && (_pageContent.materialConfigs['en'] || Object.values(_pageContent.materialConfigs)[0]);
+            const roleIdContent = (matCfg && matCfg.roleIdGuide) || (matCfgFallback && matCfgFallback.roleIdGuide);
+            if (roleIdContent) {
+                helpSections.innerHTML = `<div class="help-section"><div class="help-section-content">${roleIdContent}</div></div>`;
+            } else {
+                helpSections.innerHTML = `
                 <div class="help-section">
                     <div class="help-section-title">
                         <span class="help-section-icon">🎮</span>
@@ -2559,7 +2676,7 @@
                     <div class="help-section-content">${t.roleIdHelpSection3Content || '<div class="help-warning">⚠️ 请确保输入正确的角色ID</div>'}</div>
                 </div>
             `;
-            
+            }
             document.getElementById('helpModal').classList.add('show');
         }
 
@@ -2860,11 +2977,124 @@
                 document.getElementById('roleIdInputCard').value = savedRoleId;
                 showRoleInfo();
             }
+
+            // ── 从 localStorage 加载代币/礼包数据 ────────────────
+            (function() {
+                try {
+                    var p = new URLSearchParams(location.search);
+                    var SITE = p.get('site') || '';
+                    if (!SITE) return;
+                    function lsArr(key) {
+                        try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) { return []; }
+                    }
+                    // 代币：overseas，status=2，优先 Others 兜底
+                    var allCoins = lsArr('coin_config_data').filter(function(c) {
+                        return c.siteName === SITE && c.dataSource === 'overseas' && c.status === 2;
+                    });
+                    var othersCoins = allCoins.filter(function(c) { return c.region === 'Others'; });
+                    var baseCoins = othersCoins.length ? othersCoins : allCoins;
+                    var seen = {};
+                    var uniqueCoins = baseCoins.filter(function(c) {
+                        if (seen[c.rechargeItemId]) return false;
+                        seen[c.rechargeItemId] = true;
+                        return true;
+                    });
+                    if (uniqueCoins.length > 0) {
+                        tierData.splice(0, tierData.length);
+                        uniqueCoins.forEach(function(c, idx) {
+                            tierData.push({
+                                id: idx + 1,
+                                tokens: c.coinAmount || 0,
+                                bonus: c.bonusCoin || 0,
+                                price: (c.localPrice || c.settlementPrice || 0) / 100,
+                                points: Math.round((c.localPrice || c.settlementPrice || 0) / 100 * 100),
+                                highlight: !!c.isHighlight,
+                                hot: !!c.showHot,
+                                coinItemImage: c.coinItemImage || '',
+                                limit: c.enableBatchPurchase ? c.batchPurchaseLimit : null
+                            });
+                        });
+                    }
+                    // 礼包：overseas，giftStatus=2
+                    var allGifts = lsArr('gift_config_data').filter(function(g) {
+                        return g.siteName === SITE && g.dataSource === 'overseas' && g.giftStatus === 2 && g.enabled !== false;
+                    });
+                    var othersGifts = allGifts.filter(function(g) { return g.region === 'Others'; });
+                    window.__dynamicOverseasGifts = (othersGifts.length ? othersGifts : allGifts).filter(function(g, i, arr) {
+                        return arr.findIndex(function(x) { return x.rechargeItemId === g.rechargeItemId; }) === i;
+                    });
+
+                    // ── 地区列表按站点配置动态渲染 ───────────────────
+                    var siteConf = lsArr('site_config_data').find(function(s) { return s.name === SITE; }) || {};
+                    var configuredRegions = siteConf.regions || [];
+                    if (configuredRegions.length > 0) {
+                        var REGION_INFO = {
+                            CN:{flag:'🇨🇳',label:'China',lang:'zh-CN',key:'cn',continent:'🌏 Asia Pacific'},
+                            JP:{flag:'🇯🇵',label:'Japan',lang:'ja',key:'jp',continent:'🌏 Asia Pacific'},
+                            KR:{flag:'🇰🇷',label:'Korea',lang:'ko',key:'kr',continent:'🌏 Asia Pacific'},
+                            TH:{flag:'🇹🇭',label:'Thailand',lang:'th',key:'th',continent:'🌏 Asia Pacific'},
+                            VN:{flag:'🇻🇳',label:'Vietnam',lang:'vi',key:'vn',continent:'🌏 Asia Pacific'},
+                            SG:{flag:'🇸🇬',label:'Singapore',lang:'en',key:'sg',continent:'🌏 Asia Pacific'},
+                            IN:{flag:'🇮🇳',label:'India',lang:'en',key:'in',continent:'🌏 Asia Pacific'},
+                            AU:{flag:'🇦🇺',label:'Australia',lang:'en',key:'au',continent:'🌏 Asia Pacific'},
+                            NZ:{flag:'🇳🇿',label:'New Zealand',lang:'en',key:'nz',continent:'🌏 Asia Pacific'},
+                            UK:{flag:'🇬🇧',label:'UK',lang:'en',key:'uk',continent:'🌍 Europe'},
+                            FR:{flag:'🇫🇷',label:'France',lang:'fr',key:'fr',continent:'🌍 Europe'},
+                            DE:{flag:'🇩🇪',label:'Germany',lang:'de',key:'de',continent:'🌍 Europe'},
+                            IT:{flag:'🇮🇹',label:'Italy',lang:'it',key:'it',continent:'🌍 Europe'},
+                            ES:{flag:'🇪🇸',label:'Spain',lang:'es',key:'es',continent:'🌍 Europe'},
+                            RU:{flag:'🇷🇺',label:'Russia',lang:'ru',key:'ru',continent:'🌍 Europe'},
+                            US:{flag:'🇺🇸',label:'United States',lang:'en',key:'us',continent:'🌎 North America'},
+                            CA:{flag:'🇨🇦',label:'Canada',lang:'en',key:'ca',continent:'🌎 North America'},
+                            MX:{flag:'🇲🇽',label:'Mexico',lang:'es',key:'mx',continent:'🌎 North America'},
+                            BR:{flag:'🇧🇷',label:'Brazil',lang:'pt',key:'br',continent:'🌎 South America'},
+                            AR:{flag:'🇦🇷',label:'Argentina',lang:'es',key:'ar',continent:'🌎 South America'},
+                            CL:{flag:'🇨🇱',label:'Chile',lang:'es',key:'cl',continent:'🌎 South America'},
+                        };
+                        var dropdown = document.getElementById('regionDropdown');
+                        if (dropdown) {
+                            // 按洲分组
+                            var continentMap = {};
+                            configuredRegions.forEach(function(code) {
+                                var info = REGION_INFO[code];
+                                if (info) {
+                                    if (!continentMap[info.continent]) continentMap[info.continent] = [];
+                                    continentMap[info.continent].push(info);
+                                }
+                            });
+                            var html = '<div class="region-item active" style="background:#4a90d9;color:white;font-weight:600;" onclick="selectRegion(\'others\',\'Others\',\'en\')"><span>🌍</span><span>Others</span></div>';
+                            Object.keys(continentMap).forEach(function(continent) {
+                                html += '<div class="continent-header">' + continent + '</div>';
+                                continentMap[continent].forEach(function(info) {
+                                    html += '<div class="region-item" onclick="selectRegion(\'' + info.key + '\',\'' + info.label + '\',\'' + info.lang + '\')"><span>' + info.flag + '</span><span>' + info.label + '</span></div>';
+                                });
+                            });
+                            dropdown.innerHTML = html;
+                        }
+                    }
+
+                    // ── 用户协议/隐私政策：无页脚配置时隐藏 ────────
+                    var pageContentConf = lsArr('page_content_data').find(function(r) {
+                        return r.siteName === SITE && r.dataSource === 'overseas';
+                    }) || {};
+                    var hasFooter = pageContentConf.footerConfigs && Object.keys(pageContentConf.footerConfigs).length > 0;
+                    if (!hasFooter) {
+                        var policyEl = document.querySelector('.policy-links');
+                        if (policyEl) policyEl.style.display = 'none';
+                    }
+                } catch(e) {}
+            })();
+
             renderTierCards();
             renderPaymentOptions(currentRegion);
 
-            // 启动新手引导（延迟1秒以确保页面完全加载）
-            setTimeout(startGuide, 1000);
+            // DOM 就绪后应用语言（含页脚内容和社交媒体）
+            updateLanguage();
+
+            // 启动新手引导（预览模式下跳过）
+            if (!new URLSearchParams(location.search).get('site')) {
+                setTimeout(startGuide, 1000);
+            }
         });
 
         document.addEventListener('click', function(event) {
@@ -2905,7 +3135,7 @@
                 </div>
             </div>
             <div class="footer-right">
-                <div class="policy-links">
+                <div class="policy-links" style="display:none;">
                     <a class="policy-link" href="#" id="termsOfService">Terms of Service</a>
                     <span class="policy-sep">|</span>
                     <a class="policy-link" href="#" id="privacyPolicy">Privacy Policy</a>
@@ -2924,16 +3154,71 @@
     <script>
     window.addEventListener('message', function(e) {
         var d = e.data;
-        if (!d || d.type !== 'THEME_UPDATE') return;
-        var r = document.documentElement.style;
-        if (d.pageBackground  !== undefined) r.setProperty('--theme-page-bg',     d.pageBackground);
-        if (d.navBar          !== undefined) r.setProperty('--theme-nav-bg',       d.navBar);
-        if (d.noticeBg        !== undefined) r.setProperty('--theme-notice-bg',    d.noticeBg);
-        if (d.authModule      !== undefined) r.setProperty('--theme-auth-bg',      d.authModule);
-        if (d.rechargeModule  !== undefined) r.setProperty('--theme-recharge-bg',  d.rechargeModule);
-        if (d.footer          !== undefined) r.setProperty('--theme-footer-bg',    d.footer);
-        if (d.modalBg         !== undefined) r.setProperty('--theme-modal-bg',     d.modalBg);
-        if (d.drawerBg        !== undefined) r.setProperty('--theme-drawer-bg',    d.drawerBg);
+        if (!d || !d.type) return;
+
+        // ── 主题颜色 ──────────────────────────────────────────
+        if (d.type === 'THEME_UPDATE') {
+            var r = document.documentElement.style;
+            if (d.pageBackground  !== undefined) r.setProperty('--theme-page-bg',     d.pageBackground);
+            if (d.navBar          !== undefined) r.setProperty('--theme-nav-bg',       d.navBar);
+            if (d.noticeBg        !== undefined) r.setProperty('--theme-notice-bg',    d.noticeBg);
+            if (d.authModule      !== undefined) r.setProperty('--theme-auth-bg',      d.authModule);
+            if (d.rechargeModule  !== undefined) r.setProperty('--theme-recharge-bg',  d.rechargeModule);
+            if (d.footer          !== undefined) r.setProperty('--theme-footer-bg',    d.footer);
+            if (d.modalBg         !== undefined) r.setProperty('--theme-modal-bg',     d.modalBg);
+            if (d.drawerBg        !== undefined) r.setProperty('--theme-drawer-bg',    d.drawerBg);
+        }
+
+        // ── 切换语言 ──────────────────────────────────────────
+        if (d.type === 'SWITCH_LANG' && d.lang) {
+            currentLang = d.lang;
+            updateLanguage();
+        }
+
+        // ── 多语言文案预览（打开帮助弹窗显示）────────────────
+        if (d.type === 'LANG_PREVIEW' && d.lang) {
+            var PRESET_ICON_MAP = { facebook: 'images/Facebook.png', twitter: 'images/推特.png', discord: 'images/discord.png' };
+            var sections = '';
+            if (d.text1) sections += '<div class="help-section"><div class="help-section-content">' + d.text1 + '</div></div>';
+            if (d.text2) sections += '<div class="help-section"><div class="help-section-title">' + d.text2 + '</div></div>';
+            if (d.text3) sections += '<div class="help-section"><div class="help-section-title">' + d.text3 + '</div></div>';
+            var helpSectionsEl = document.getElementById('helpSections');
+            if (helpSectionsEl) helpSectionsEl.innerHTML = sections || '<p style="color:#999">（暂无内容）</p>';
+            var helpTitleEl = document.getElementById('helpTitle');
+            if (helpTitleEl) helpTitleEl.textContent = '多语言预览 - ' + d.lang;
+            var helpModalEl = document.getElementById('helpModal');
+            if (helpModalEl) helpModalEl.classList.add('open');
+        }
+
+        // ── 素材配置预览（打开帮助弹窗显示）─────────────────
+        if (d.type === 'MATERIAL_PREVIEW' && d.lang) {
+            var matSections = '';
+            if (d.roleIdGuide) matSections += '<div class="help-section"><div class="help-section-title">角色ID获取说明</div><div class="help-section-content">' + d.roleIdGuide + '</div></div>';
+            if (d.coinRechargeGuide) matSections += '<div class="help-section"><div class="help-section-title">代币充值说明</div><div class="help-section-content">' + d.coinRechargeGuide + '</div></div>';
+            var matHelpSectionsEl = document.getElementById('helpSections');
+            if (matHelpSectionsEl) matHelpSectionsEl.innerHTML = matSections || '<p style="color:#999">（暂无内容）</p>';
+            var matHelpTitleEl = document.getElementById('helpTitle');
+            if (matHelpTitleEl) matHelpTitleEl.textContent = '素材预览 - ' + d.lang;
+            var matHelpModalEl = document.getElementById('helpModal');
+            if (matHelpModalEl) matHelpModalEl.classList.add('open');
+        }
+
+        // ── 页脚预览 ──────────────────────────────────────────
+        if (d.type === 'FOOTER_PREVIEW') {
+            var SOCIAL_ICON_MAP = { facebook: 'images/Facebook.png', twitter: 'images/推特.png', discord: 'images/discord.png' };
+            var contactEl = document.getElementById('contactEmail');
+            if (contactEl && d.content !== undefined) contactEl.innerHTML = d.content || '';
+            var socialLinksEl = document.querySelector('.social-links');
+            if (socialLinksEl && d.socialLinks && d.socialLinks.length) {
+                socialLinksEl.innerHTML = d.socialLinks.map(function(l) {
+                    var src = l.iconType === 'custom' ? l.customIcon : (SOCIAL_ICON_MAP[l.presetIcon] || '');
+                    if (!src) return '';
+                    return '<div class="social-link" onclick="window.open(\'' + l.url + '\',\'_blank\')">'
+                         + '<img src="' + src + '" alt="' + (l.presetIcon || 'social') + '" style="width:22px;height:22px;object-fit:contain;">'
+                         + '</div>';
+                }).join('');
+            }
+        }
     });
     </script>
 
@@ -3153,7 +3438,7 @@
 
     <script>
         var prdVersions = [
-          {label:"v1.0 (最新)",date:"2026-04-16",content:"# 游戏充值中心（海外版移动端）- PRD\n\n**文档版本**：v1.0\n**创建日期**：2026-04-16\n\n---\n\n> **原型阶段说明**\n> 当前为产品原型阶段，页面内使用模拟数据展示效果。正式上线后，所有数据（档位/礼包/Banner/通知栏/支付方式/主题颜色等）均从 B 端配置管理系统通过接口获取，C 端不硬编码任何业务数据。\n\n---\n\n## 1. 产品概述\n\n游戏充值中心（海外版）是一款面向全球玩家的 H5 移动端充值页面，支持多地区、多语言、多货币。\n\n**C端与B端关系**：所有可配置内容（站点信息、支持地区、支付方式、代币档位、礼包、Banner、通知栏等）均由 B 端运营人员配置后下发，C 端负责渲染展示和交互。\n\n### 1.1 整体布局\n\n```\n┌─────────────────────────────┐\n│ 顶部导航（Logo + 功能按钮区）  │\n│ 右侧：语种选择器 + 地区选择器  │\n├─────────────────────────────┤\n│ Banner（160px 高，轮播）      │\n├─────────────────────────────┤\n│ 通知栏（滚动文字公告）         │\n├─────────────────────────────┤\n│ 角色验证卡片                  │\n├─────────────────────────────┤\n│ Tab：代币充值 / 道具礼包       │\n│ 档位/礼包列表（2列网格）       │\n├─────────────────────────────┤\n│ 底部 Footer（社交媒体 + 协议） │\n└─────────────────────────────┘\n            ↓（选择档位/礼包后）\n┌─────────────────────────────┐\n│ 底部订单确认抽屉（上滑弹出）   │\n└─────────────────────────────┘\n```\n\n---\n\n## 2. 数据来源与接入\n\n通过 URL 参数 `?site=站点名` 加载 B 端数据，规则与国内版一致。\n\n---\n\n## 3. 地区 / 语言 / 货币联动规则\n\n### 3.1 切换地区\n\n```mermaid\nflowchart TD\n    A([用户选择地区]) --> B[\"更新当前货币\\ncurrency / symbol / rate\"]\n    B --> C[\"按 REGION_LANG_MAP 自动切换对应语言\"]\n    C --> D[\"重新渲染代币档位\\n按新地区筛选B端数据\"]\n    D --> E[\"重新渲染支付方式\\n按新地区映射\"]\n    E --> F{当前是礼包Tab？}\n    F -->|是| G[\"重新渲染礼包\\n按新地区筛选\"]\n    F -->|否| H([完成])\n    G --> H\n```\n\n### 3.2 手动切换语言\n\n- **只更新 UI 文案**（按钮/标签/提示语）\n- **不改变货币**（货币由地区决定）\n- **不改变支付方式**（支付方式由地区决定）\n\n### 3.3 无数据兜底规则\n\n| 数据类型 | 当前地区无数据 | Others 也无数据 |\n|---------|-------------|--------------|\n| 代币档位 | 展示 Others 档位 | 隐藏「代币充值」Tab |\n| 道具礼包 | 展示 Others 礼包 | 隐藏「道具礼包」Tab |\n| 支付方式 | 优先 B 端配置的 `paymentChannel` → 无则用地区默认列表 → 无则用 Others 默认列表 | — |\n\n---\n\n## 4. Banner 展示规则（海外）\n\n1. 获取所有 `status=2` 且时间有效的 Banner\n2. **按当前语言匹配**：优先展示与当前语言匹配的 Banner 版本\n3. **语言无匹配**：回退展示 `others`（默认）语言的 Banner\n4. **无 others 配置**：隐藏 Banner 区域，不展示\n5. 多条有效 Banner 时，3秒轮播（同国内版）\n\n---\n\n## 5. 通知栏展示规则（海外）\n\n1. 获取所有 `status=2` 且时间有效的通知\n2. **按当前语言匹配**：优先展示与当前语言匹配的通知\n3. **语言无匹配**：回退展示 `others`（默认）语言的通知\n4. **无 others 配置**：隐藏通知栏，不展示\n5. 取匹配结果中 sort 最小的一条展示\n6. 通知可手动关闭，当次会话内不再显示\n\n---\n\n## 6. 角色验证\n\n### 6.1 角色ID验证（通用）\n\n输入角色ID → 点击验证 → 验证成功后展示服务器名称和角色名称。\n\n### 6.2 邮箱验证码登录（海外专有，由B端站点配置决定是否开启）\n\n```mermaid\nflowchart TD\n    A([输入角色ID]) --> B([点击「获取验证码」])\n    B --> C[/\"游戏内向该角色绑定邮箱\\n发送角色验证码邮件\\n6位数字\\nUTC时间 +24h 为失效时刻\\n使用后立即失效\"/]\n    C --> D[\"按钮进入60秒倒计时\\n提示：X秒后重新获取验证码\"]\n    D --> E{倒计时结束}\n    E --> F[\"按钮变为「重新发送」\"]\n    F -->|点击重新发送| B\n    D --> G[\"用户输入验证码\\n仅支持数字输入，6位\"]\n    G --> H([点击验证])\n    H --> I{验证结果}\n    I -->|成功| J[\"隐藏输入框\\n展示角色信息（服务器+角色名）\\n提供「重新输入」按钮\"]\n    I -->|验证码错误| K[\"提示：验证码错误\"]\n    I -->|验证码已过期| L[\"提示：验证码已过期\\n需重新获取\"]\n    K --> G\n    L --> B\n```\n\n**规则说明**：\n- 验证码格式：6位纯数字；输入框仅接受数字输入\n- 有效期：UTC 时间获取时刻 +24 小时；使用后立即失效\n- **无错误次数锁定规则**\n\n---\n\n## 7. 代币档位卡片结构\n\n| 层级 | 图片来源 | 默认图 |\n|------|---------|--------|\n| 上方充值项大图 | 代币配置 `coinItemImage`（必填） | `images/充值项图片.png` |\n| 代币行图标 | 站点配置 `coinImage` | `images/代币图片.png` |\n| 赠送代币行图标 | 站点配置 `bonusCoinImage` | `images/赠送代币图片.png` |\n\n额外支持：赠送百分比角标（左上）/ HOT 标签（右上）/ 高亮背景（均由 B 端配置控制）\n\n价格格式：货币代码 + 空格 + 整数千位分隔符，如 `TWD 320`、`JPY 1,600`\n\n---\n\n## 8. 支付流程\n\n```mermaid\nflowchart TD\n    A([选择代币档位 / 道具礼包]) --> B{是否已验证角色}\n    B -->|未验证| C[\"提示先验证角色\\n定位到角色验证卡片\"]\n    C --> D\n    B -->|已验证| D[\"弹出订单确认抽屉\\n从底部上滑\"]\n    D --> E[\"展示订单信息\\n角色信息\\n代币数量 / 赠送代币\\n购买数量（1~999）\"]\n    E --> F[\"展示支付方式列表\\n按当前地区 2×2 网格布局\\nPayPal / Visa / ApplePay / GooglePay 等\"]\n    F --> G([选择支付方式])\n    G --> H[\"「立即支付」按钮激活\"]\n    H --> I([点击「立即支付」])\n    I --> J[\"触发支付 SDK\\n或跳转支付页面\"]\n```\n\n**支付方式来源优先级**：\n1. B 端配置的 `paymentChannel`（优先）\n2. 地区默认支付方式列表\n3. Others 默认列表（兜底）\n\n---\n\n## 9. 新手引导\n\n首次访问时自动启动（`localStorage hasSeenGuide` 控制），共 4 步：\n\n```mermaid\nflowchart LR\n    S([首次访问]) --> A[\"步骤1：角色验证\\n高亮验证卡片\"]\n    A --> B[\"步骤2：选择档位\\n高亮档位网格\"]\n    B --> C[\"步骤3：选择支付方式\\n高亮支付区\\n（自动打开订单抽屉）\"]\n    C --> D[\"步骤4：完成支付\\n高亮支付按钮\"]\n    D --> E([\"完成 / 跳过\\n写入 localStorage\\n不再触发\"])\n```\n\n- 每步提供「跳过」和「下一步」按钮\n- 提示框动态定位，避免超出屏幕边界\n\n---\n\n## 10. 主题颜色支持\n\n| B 端字段名 | 中文说明 | 对应 C 端区域 |\n|-----------|---------|--------------|\n| 页面背景色 | 整个充值页面的底色 | 页面 `body` 背景 |\n| 顶部导航栏 | 顶部 Logo 和功能按钮所在的导航条 | `.header` |\n| 通知栏 | Banner 下方公告横幅背景色 | `.notice-bar` |\n| 角色验证模块 | 角色ID输入/验证区域的背景色 | `.role-info-card` |\n| 充值模块 | Tab 切换栏及档位/礼包内容区背景色 | `.tab-container` |\n| 页脚 | 底部社交媒体和协议链接区域背景色 | `.footer` |\n| 订单确认抽屉 | 选择商品后底部弹出的支付面板背景色 | `.payment-drawer` |\n\n---\n\n\n---\n\n## 测试账号（原型演示用）\n\n> 以下为原型阶段 Mock 数据，仅用于功能演示，上线后替换为真实接口。\n\n### 角色ID验证\n\n| 角色ID | 服务器 | 角色名 |\n|--------|--------|--------|\n| `10001` | Server 1 | Player001 |\n| `10002` | Server 2 | Player002 |\n| `10003` | Server 3 | Player003 |\n\n### 邮箱验证码登录（角色ID + 验证码）\n\n| 项目 | 值 |\n|------|-----|\n| 角色ID | `10001` / `10002` / `10003` |\n| 验证码 | `123456`（原型阶段 Mock 验证码，24小时有效，使用后失效） |\n\n\n## 版本历史\n\n| 版本 | 日期 | 内容 |\n|------|------|------|\n| v1.0 | 2026-04-16 | 初始版本 |\n"}
+          {label:"v1.0 (最新)",date:"2026-04-23",content:"# 游戏充值中心（海外版移动端）- PRD\n\n**文档版本**：v1.0  \n**最后更新**：2026-04-23\n\n---\n\n> **原型阶段说明**：C端通过 `?site=站点名` 参数从 localStorage 读取 B 端配置数据，自动渲染充值网页。正式上线后所有数据通过后端接口获取。\n\n---\n\n## 1. 产品定位与核心价值\n\n**核心价值**：B 端一次配置，自动生成支持多地区、多语言、多货币的海外移动端充值网页，无需为每款游戏单独开发。\n\n### 1.1 整体布局\n\n```\n┌─────────────────────────────┐\n│ 顶部导航（Logo + 语种选择 + 地区选择）│\n├─────────────────────────────┤\n│ Banner（轮播区，按当前语言匹配）│\n├─────────────────────────────┤\n│ 通知栏（按当前语言匹配）      │\n├─────────────────────────────┤\n│ 角色验证卡片（常驻）          │\n├─────────────────────────────┤\n│ Tab：代币充值 / 道具礼包      │\n│  代币档位列表（2列网格）      │\n│  礼包列表                    │\n├─────────────────────────────┤\n│ 页脚（社交图标 + 协议 + 说明）│\n└─────────────────────────────┘\n     ↓（点击档位/礼包后）\n┌─────────────────────────────┐\n│ 底部订单确认抽屉              │\n└─────────────────────────────┘\n```\n\n---\n\n## 2. B→C 配置映射（核心实现机制）\n\n| B端配置模块 | C端展示区域 | 读取Key | 过滤条件 |\n|------------|------------|--------|---------|\n| 站点配置→游戏Logo | 顶部导航Logo | `site_config_data` | `name===站点名` |\n| 站点配置→地区配置 | 地区选择器选项（按站点地区过滤） | `site_config_data` | `name===站点名` |\n| 站点配置→代币图片 | 档位卡片图标行 | `site_config_data` | 同上 |\n| Banner配置 | 顶部轮播（按当前语言匹配） | `banner_config_data` | `siteName && status===2 && language===当前语言 && 时间有效` |\n| 通知栏配置 | 公告横幅（按当前语言匹配） | `notification_config_data` | 同上 |\n| 代币配置（按地区） | 档位卡片列表 | `coin_config_data` | `siteName && status===2 && (region===当前地区 或 region===Others)` |\n| 礼包配置（按地区） | 礼包列表 | `gift_config_data` | `siteName && giftStatus===2 && enabled && (region===当前地区 或 region===Others)` |\n| 页面配置→颜色 | 各区域背景色 | postMessage: THEME_UPDATE | — |\n| 页面配置→多语言文案 | 帮助弹窗内容（代币 ? 图标） | `page_content_data` | `siteName && dataSource===overseas && materialConfigs[lang]` |\n| 页面配置→素材配置 | 帮助弹窗（角色ID / 充值说明） | `page_content_data` | 同上 |\n| 页面配置→页脚内容 | 页脚文字 | `page_content_data` | `footerConfigs[lang].content` |\n| 页面配置→社交媒体 | 页脚社交图标 | `page_content_data` | `footerConfigs[lang].socialLinks` |\n\n### 2.1 数据加载流程\n\n```mermaid\nflowchart TD\n    A([页面加载]) --> B[解析 ?site=站点名]\n    B --> C[读取站点信息（地区列表、代币图片等）]\n    C --> D[根据站点地区配置构建地区选择器（五大洲分组）]\n    D --> E[默认语言：Others → en]\n    E --> F[DOMContentLoaded]\n    F --> G[渲染代币档位（按当前地区 Others 兜底）]\n    G --> H[渲染礼包（按当前地区 Others 兜底）]\n    H --> I[渲染 Banner（按当前语言，无匹配则 others）]\n    I --> J[渲染通知栏（按当前语言）]\n    J --> K[渲染页脚 + 社交媒体（按当前语言）]\n    K --> L[恢复上次登录状态（localStorage）]\n    L --> M[监听 postMessage]\n```\n\n### 2.2 Others 兜底规则\n\n海外各配置模块均有「Others」兜底机制：\n\n| 场景 | 处理方式 |\n|------|---------|\n| 当前地区无代币配置 | 展示 region=Others 的档位 |\n| 当前语言无 Banner | 展示 language=others 的 Banner |\n| 当前语言无通知 | 展示 language=others 的通知 |\n| 当前语言无页脚内容 | 降级：当前语言 → en → 第一个语言 → 硬编码默认 |\n| 当前语言无素材配置 | 降级：当前语言 → en → 第一个语言 → 硬编码默认 |\n\n### 2.3 异常处理规则\n\n| 异常场景 | 处理方式 |\n|---------|---------|\n| JSON 解析失败 | 返回空数组 `[]`，继续渲染 |\n| 无任何代币数据 | 显示硬编码静态档位卡片 |\n| 无任何礼包数据 | 显示硬编码静态礼包卡片 |\n| 图片加载失败 | 显示对应默认图片 |\n\n---\n\n## 3. 地区 / 语言 / 货币三联动规则\n\n```mermaid\nflowchart TD\n    A([用户切换地区]) --> B[更新当前货币（currency / symbol / rate）]\n    B --> C[按 REGION_LANG_MAP 自动切换对应语言]\n    C --> D[重新渲染代币档位（按新地区过滤）]\n    D --> E[重新渲染礼包（按新地区过滤）]\n    E --> F[重新渲染支付方式（按新地区匹配）]\n    F --> G[重新渲染通知/Banner（按新语言匹配）]\n    G --> H[更新页脚内容 + 社交媒体（按新语言）]\n\n    I([用户手动切换语言]) --> J[只更新 UI 文案\\n不改变货币\\n不改变支付方式]\n```\n\n**地区→语言映射（部分）**：\n\n| 地区 | 语言代码 | 货币 |\n|------|---------|------|\n| US/CA/SG/AU | en | USD/CAD/SGD/AUD |\n| JP | ja-JP | JPY |\n| KR | ko-KR | KRW |\n| TH | th-TH | THB |\n| VN | vi-VN | VND |\n| CN | zh-CN | — |\n| UK/DE/FR... | en/de/fr... | GBP/EUR... |\n\n---\n\n## 4. Banner 展示规则（海外）\n\n1. 过滤：`siteName && status === 2 && 时间有效`\n2. 优先匹配当前语言，无匹配时展示 `language === 'others'` 的 Banner\n3. 多条：3秒轮播；单条：静态展示\n4. 无任何匹配 → 不展示 Banner 区域\n\n---\n\n## 5. 通知栏展示规则（海外）\n\n1. 过滤：`siteName && status === 2 && 时间有效`\n2. 优先匹配当前语言，无匹配时展示 `language === 'others'`\n3. 取第一条（按 sort 升序）展示于公告横幅\n4. 可手动关闭，关闭后当次会话内不再显示\n\n---\n\n## 6. 代币档位渲染规则（海外）\n\n过滤：`siteName && dataSource===overseas && status===2 && (region===当前地区 || region===Others)`\n\n按 `rechargeItemId` 去重，相同档位不同地区只取一条（当前地区优先，无则取 Others）。\n\n**卡片结构**：\n\n| 层级 | 图片来源 | 默认图 |\n|------|---------|--------|\n| 上方充值项大图 | `coinItemImage` | `images/充值项图片.png` |\n| 代币行图标 | 站点 `coinImage` | `images/代币图片.png` |\n| 赠送代币行图标 | 站点 `bonusCoinImage` | `images/赠送代币图片.png` |\n\n价格展示：`货币代码 空格 金额`，如 `USD 6`、`JPY 800`\n\n---\n\n## 7. 角色验证流程（海外特有）\n\n支持两种验证方式（由 B 端站点配置决定）：\n\n### 7.1 角色ID验证\n\n输入角色ID → 点击验证 → 成功后显示角色信息（服务器名 + 角色名）+ 「重新输入」链接\n\n### 7.2 邮箱验证码验证（海外专有）\n\n```mermaid\nflowchart TD\n    A([输入角色ID]) --> B([点击「获取验证码」])\n    B --> C[\"游戏向角色绑定邮箱发送验证码\\n60秒倒计时\"]\n    C --> D([输入6位验证码 → 点击验证])\n    D --> E{验证结果}\n    E -->|成功| F[显示角色信息卡片]\n    E -->|验证码错误| G[提示：验证码错误]\n    E -->|验证码已过期| H[提示：已过期，重新获取]\n    G --> D\n    H --> B\n```\n\n规则：\n- 验证码格式：6位纯数字\n- 有效期：获取时刻 UTC +24小时；使用后立即失效\n- 无错误次数锁定\n\n---\n\n## 8. 帮助弹窗（素材配置）\n\n玩家可点击 `?` 图标打开帮助弹窗，内容来自 B 端「页面配置→素材配置」：\n\n| 入口 | 弹窗标题 | 内容来源 |\n|------|---------|---------|\n| 角色验证区 `?` | 如何获取角色ID？ | `materialConfigs[当前语言].roleIdGuide` |\n| 代币 Tab 旁 `?` | 代币充值说明 | `materialConfigs[当前语言].coinRechargeGuide` |\n\n降级规则：当前语言 → `en` → 第一个语言 → 硬编码默认文案\n\n---\n\n## 9. 支付流程\n\n```mermaid\nflowchart TD\n    A([点击档位/礼包]) --> B{是否已验证角色}\n    B -->|未验证| C[定位到角色验证区，提示先验证]\n    C --> D[验证成功]\n    D --> E\n    B -->|已验证| E[底部上滑订单抽屉]\n    E --> F[\"订单信息：商品/代币/赠送/数量(1~99)/总价（本地货币）\"]\n    F --> G([选择支付方式（按当前地区匹配）])\n    G --> H([点击立即支付])\n    H --> I[支付二维码 + 300秒倒计时]\n    I --> J([点击「我已完成支付」])\n    J --> K{验证}\n    K -->|成功| L[✅ 支付成功]\n    K -->|失败| M[❌ 失败/超时]\n```\n\n支付方式优先级：B端 paymentChannel 配置 → 当前地区默认列表 → Others 默认列表\n\n---\n\n## 10. 新手引导（首次访问）\n\n```mermaid\nflowchart LR\n    A([首次访问]) --> B[\"步骤1：角色验证\\n高亮验证卡片\"]\n    B --> C[\"步骤2：选择代币\\n高亮档位网格\"]\n    C --> D[\"步骤3：支付方式\\n高亮支付区（自动打开订单抽屉）\"]\n    D --> E[\"步骤4：完成支付\\n高亮支付按钮\"]\n    E --> F([完成/跳过\\n写入 localStorage.hasSeenGuide\\n下次不再触发])\n```\n\n触发条件：`localStorage.hasSeenGuide` 不存在时，页面加载1秒后自动启动。\n**预览模式**：URL 含 `?site=` 参数时，不触发新手引导（防止 B 端预览时干扰）。\n\n---\n\n## 11. 主题颜色动态更新\n\nB端通过 postMessage `THEME_UPDATE` 推送：\n\n| B端字段 | CSS变量 | C端区域 |\n|--------|---------|--------|\n| pageBackground | `--theme-page-bg` | body |\n| navBar | `--theme-nav-bg` | .header |\n| noticeBg | `--theme-notice-bg` | .notice-bar |\n| authModule | `--theme-auth-bg` | .role-info-card |\n| rechargeModule | `--theme-recharge-bg` | .package-section |\n| footer | `--theme-footer-bg` | .footer |\n| modalBg | `--theme-modal-bg` | 帮助弹窗 |\n| drawerBg | `--theme-drawer-bg` | 订单抽屉 |\n\n---\n\n## 12. 页脚配置\n\n从 `page_content_data.footerConfigs[当前语言]` 读取：\n- **content**：富文本 HTML，注入到 `#contactEmail` 元素\n- **socialLinks**：渲染为社交图标横排（Facebook/Twitter/Discord/自定义），可点击跳转\n- 降级：无当前语言 → en → 第一个语言 → 硬编码默认文案\n- 用户协议 / 隐私政策链接：**页脚无配置时隐藏**，配置了页脚内容时不显示\n\n---\n\n## 13. 测试账号（原型演示用）\n\n> Mock 数据，仅供演示，上线后替换为真实接口。\n\n### 角色ID验证\n\n| 角色ID | 服务器 | 角色名 |\n|--------|--------|--------|\n| `10001` | Server 1 | Player001 |\n| `10002` | Server 2 | Player002 |\n| `10003` | Server 3 | Player003 |\n\n### 邮箱验证码验证（角色ID + 验证码）\n\n| 项目 | 值 |\n|------|-----|\n| 角色ID | `10001` / `10002` / `10003` |\n| 验证码 | `123456`（原型 Mock，24小时有效，使用后立即失效） |\n\n---\n\n## 版本历史\n\n| 版本 | 日期 | 内容 |\n|------|------|------|\n| v1.0 | 2026-04-23 | 完整版（B→C配置映射/地区语言货币联动/角色验证/新手引导/帮助弹窗/Others兜底/流程图） |\n"}
         ];
         var prdCurrentVersion = 0;
         var prdLoaded = false;

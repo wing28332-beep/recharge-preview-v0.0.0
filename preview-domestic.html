@@ -1690,6 +1690,16 @@
             margin-bottom: 15px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             display: none;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #606266;
+        }
+
+        /* 富文本注入内容的字号约束 */
+        .footer-info p, .footer-info div, .footer-info span,
+        .footer-info strong, .footer-info b, .footer-info li {
+            font-size: 12px;
+            line-height: 1.6;
         }
 
         .footer-info.show {
@@ -3185,6 +3195,9 @@
         let selectedPaymentMethod = 'wechat';
         let currentRoleId = null;
         let loginMethod = null; // 'phone', 'account', 'roleid'
+        // B端预览模式：有site参数时跳过登录校验，默认以游客身份预览
+        const __isPreviewMode = !!new URLSearchParams(location.search).get('site');
+        if (__isPreviewMode) currentRoleId = 'preview';
 
         function showModal(modalId) {
             document.getElementById(modalId).classList.add('show');
@@ -4091,18 +4104,232 @@
     <button id="prdFloatBtn" onclick="openPrdPanel()" title="查看PRD文档">PRD</button>
     <script>if (window !== window.top) { document.getElementById('prdFloatBtn').style.display = 'none'; }</script>
     <script>
+    // ── 读取站点所有配置数据 ──────────────────────────────────
+    (function() {
+        try {
+            var p = new URLSearchParams(location.search);
+            var SITE = p.get('site') || '';
+            if (!SITE) return;
+
+            function lsArr(key) {
+                try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) { return []; }
+            }
+
+            var siteList = lsArr('site_config_data');
+            var siteInfo = siteList.find(function(s) { return s.name === SITE; }) || {};
+            var pageContentList = lsArr('page_content_data');
+            var pageContent = pageContentList.find(function(r) { return r.siteName === SITE && r.dataSource === 'domestic'; }) || {};
+            var coins   = lsArr('coin_config_data').filter(function(c) { return c.siteName === SITE && c.status === 2; });
+            var gifts   = lsArr('gift_config_data').filter(function(g) { return g.siteName === SITE && g.giftStatus === 2 && g.enabled !== false; });
+            var banners = lsArr('banner_config_data').filter(function(b) { return b.siteName === SITE && b.status === 2; });
+            var notices = lsArr('notification_config_data').filter(function(n) { return n.siteName === SITE && n.status === 2; });
+
+            document.addEventListener('DOMContentLoaded', function() {
+
+                // ── 站点 Logo ──────────────────────────────────
+                if (siteInfo.gameLogo) {
+                    document.querySelectorAll('.game-icon').forEach(function(el) { el.src = siteInfo.gameLogo; });
+                }
+                var coinImg   = siteInfo.coinImage || 'images/代币图片.png';
+                var bonusImg  = siteInfo.bonusCoinImage || 'images/赠送代币图片.png';
+
+                // ── Banner ────────────────────────────────────
+                var bannerEl = document.querySelector('.banner');
+                if (bannerEl && banners.length > 0) {
+                    var now = Date.now();
+                    var activeBanners = banners.filter(function(b) {
+                        if (!b.startTime && !b.endTime) return true;
+                        var s = b.startTime ? new Date(b.startTime).getTime() : 0;
+                        var e = b.endTime   ? new Date(b.endTime).getTime()   : Infinity;
+                        return now >= s && now <= e;
+                    });
+                    if (activeBanners.length > 0) {
+                        var imgs = activeBanners.map(function(b, i) {
+                            return '<div class="banner-slide" style="display:' + (i===0?'block':'none') + ';width:100%;height:100%;position:absolute;top:0;left:0;">'
+                                + (b.jumpUrl
+                                    ? '<a href="' + b.jumpUrl + '" target="_blank"><img src="' + (b.bannerImage||'images/banner.jpg') + '" style="width:100%;height:100%;object-fit:cover;"></a>'
+                                    : '<img src="' + (b.bannerImage||'images/banner.jpg') + '" style="width:100%;height:100%;object-fit:cover;">')
+                                + '</div>';
+                        }).join('');
+                        bannerEl.style.position = 'relative';
+                        bannerEl.innerHTML = imgs;
+                        if (activeBanners.length > 1) {
+                            var cur = 0;
+                            setInterval(function() {
+                                var slides = bannerEl.querySelectorAll('.banner-slide');
+                                slides[cur].style.display = 'none';
+                                cur = (cur + 1) % slides.length;
+                                slides[cur].style.display = 'block';
+                            }, 3000);
+                        }
+                    }
+                }
+
+                // ── 通知栏 ────────────────────────────────────
+                if (notices.length > 0) {
+                    var noticeTextEl = document.querySelector('.notice-text');
+                    if (noticeTextEl) {
+                        var now2 = Date.now();
+                        var activeNotices = notices.filter(function(n) {
+                            if (!n.startTime && !n.endTime) return true;
+                            var s = n.startTime ? new Date(n.startTime).getTime() : 0;
+                            var e = n.endTime   ? new Date(n.endTime).getTime()   : Infinity;
+                            return now2 >= s && now2 <= e;
+                        });
+                        if (activeNotices.length > 0) {
+                            noticeTextEl.textContent = activeNotices[0].content || '';
+                            var noticeBar = document.querySelector('.notice-bar') || document.getElementById('noticeBar');
+                            if (noticeBar) noticeBar.style.display = '';
+                        }
+                    }
+                }
+
+                // ── 代币档位 ─────────────────────────────────
+                var tierGrid = document.querySelector('.tier-grid');
+                if (tierGrid && coins.length > 0) {
+                    var fixedCoins = coins.filter(function(c) { return !c.type || c.type === 'fixed'; });
+                    var customCoin = coins.find(function(c) { return c.type === 'custom'; });
+
+                    var tierHtml = fixedCoins.map(function(c, idx) {
+                        var price = (c.price / 100).toFixed(0);
+                        var points = Math.round(c.price / 100 * 100);
+                        var itemImg = c.coinItemImage || 'images/充值项图片.png';
+                        var bonusHtml = c.bonusCoin > 0
+                            ? '<span class="tier-plus">+</span><img src="' + bonusImg + '" alt="赠送" class="tier-coin-icon"><span class="tier-bonus">+' + c.bonusCoin + '</span>'
+                            : '';
+                        return '<div class="tier-card" onclick="selectTier(' + (idx+1) + ')">'
+                            + '<div class="tier-points-top">赠送' + points + '积分</div>'
+                            + '<div class="tier-item-img-wrap"><img src="' + itemImg + '" alt="充值项" class="tier-item-img"></div>'
+                            + '<div class="tier-amount-row"><img src="' + coinImg + '" alt="代币" class="tier-coin-icon"><span class="tier-amount">' + c.coinAmount + '</span>' + bonusHtml + '</div>'
+                            + '<div class="tier-price-bottom">¥' + price + '</div>'
+                            + '</div>';
+                    }).join('');
+
+                    // 自定义档位放最后
+                    if (customCoin) {
+                        var unitPrice = customCoin.unitPrice || 0;
+                        var bonusR    = customCoin.bonusRatioBonus || 1;
+                        var amountR   = customCoin.bonusRatioAmount || 1;
+                        tierHtml += '<div class="tier-card tier-card-custom" id="customTierCard" onclick="selectCustomTier(this)">'
+                            + '<div class="tier-points-top">自定义档位</div>'
+                            + '<div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>'
+                            + '<div class="custom-tier-input-wrap">'
+                            + '<input type="number" id="customTierInput" min="1" placeholder="输入代币数量" style="width:100%;text-align:center;border:1px solid #ddd;border-radius:4px;padding:4px;font-size:13px;" oninput="updateCustomTier(this,' + unitPrice + ',' + bonusR + ',' + amountR + ')">'
+                            + '</div>'
+                            + '<div class="tier-amount-row" id="customTierAmount" style="font-size:12px;color:#999;">输入数量后显示</div>'
+                            + '<div class="tier-price-bottom" id="customTierPrice">¥0</div>'
+                            + '</div>';
+                        // 注入 updateCustomTier 函数
+                        if (!window.updateCustomTier) {
+                            window.updateCustomTier = function(input, unitPrice, bonusR, amountR) {
+                                var qty = parseInt(input.value) || 0;
+                                var bonus = Math.floor(qty * bonusR / amountR);
+                                var price = (qty * unitPrice / 100).toFixed(2);
+                                var amtEl = document.getElementById('customTierAmount');
+                                var priceEl = document.getElementById('customTierPrice');
+                                if (amtEl) amtEl.innerHTML = qty + ' <span style="color:#f90;font-size:11px;">+赠' + bonus + '</span>';
+                                if (priceEl) priceEl.textContent = '¥' + price;
+                            };
+                        }
+                    }
+
+                    tierGrid.innerHTML = tierHtml;
+                    window.__dynamicTiers = fixedCoins;
+                }
+
+                // ── 礼包列表 ─────────────────────────────────
+                var giftGrid = document.querySelector('.gift-grid');
+                if (giftGrid && gifts.length > 0) {
+                    window.__dynamicGifts = gifts;
+                    giftGrid.innerHTML = gifts.map(function(g, idx) {
+                        var points = Math.round(parseFloat(g.amount || 0) * 100);
+                        return '<div class="gift-card" onclick="selectGift(' + (idx+1) + ')">'
+                            + '<div class="gift-points-badge">赠送' + points + '积分</div>'
+                            + '<div class="gift-main">'
+                            + '<div class="gift-left"><img src="' + (g.giftImage || 'images/libao.png') + '" alt="' + g.giftName + '"></div>'
+                            + '<div class="gift-middle">'
+                            + '<div class="gift-name">' + g.giftName + '</div>'
+                            + '<div class="gift-price">¥' + g.amount + '</div>'
+                            + '<div class="gift-limit">' + (g.content || '') + '</div>'
+                            + '<div class="gift-time">' + (g.activityTime || '') + '</div>'
+                            + '</div>'
+                            + '<div class="gift-right"><button class="gift-buy-btn">立即购买</button></div>'
+                            + '</div>'
+                            + '</div>';
+                    }).join('');
+                }
+
+                // ── 页脚内容 ─────────────────────────────────
+                if (pageContent.domesticFooterContent) {
+                    var footerInfo = document.querySelector('.footer-info');
+                    if (footerInfo) footerInfo.innerHTML = pageContent.domesticFooterContent;
+                }
+
+                // ── 社交媒体 ─────────────────────────────────
+                var socialLinks = pageContent.domesticSocialLinks || [];
+                if (socialLinks.length) {
+                    var PRESET_ICON = { facebook: 'images/Facebook.png', twitter: 'images/推特.png', discord: 'images/discord.png' };
+                    var socialHtml = socialLinks.map(function(l) {
+                        var src = l.iconType === 'custom' ? l.customIcon : (PRESET_ICON[l.presetIcon] || '');
+                        if (!src) return '';
+                        return '<a href="' + l.url + '" target="_blank" rel="noopener" style="display:inline-block;margin-right:10px;">'
+                             + '<img src="' + src + '" alt="' + (l.presetIcon || 'social') + '" style="width:28px;height:28px;object-fit:contain;">'
+                             + '</a>';
+                    }).join('');
+                    if (socialHtml) {
+                        var socialWrap = document.createElement('div');
+                        socialWrap.style.cssText = 'padding:10px 16px 0;';
+                        socialWrap.innerHTML = socialHtml;
+                        var footerTarget = document.querySelector('.footer-info') || document.querySelector('.footer');
+                        if (footerTarget) footerTarget.appendChild(socialWrap);
+                    }
+                }
+            });
+        } catch(e) {}
+    })();
     window.addEventListener('message', function(e) {
         var d = e.data;
-        if (!d || d.type !== 'THEME_UPDATE') return;
-        var r = document.documentElement.style;
-        if (d.pageBackground  !== undefined) r.setProperty('--theme-page-bg',     d.pageBackground);
-        if (d.navBar          !== undefined) r.setProperty('--theme-nav-bg',       d.navBar);
-        if (d.noticeBg        !== undefined) r.setProperty('--theme-notice-bg',    d.noticeBg);
-        if (d.authModule      !== undefined) r.setProperty('--theme-auth-bg',      d.authModule);
-        if (d.rechargeModule  !== undefined) r.setProperty('--theme-recharge-bg',  d.rechargeModule);
-        if (d.footer          !== undefined) r.setProperty('--theme-footer-bg',    d.footer);
-        if (d.modalBg         !== undefined) r.setProperty('--theme-modal-bg',     d.modalBg);
-        if (d.drawerBg        !== undefined) r.setProperty('--theme-drawer-bg',    d.drawerBg);
+        if (!d || !d.type) return;
+
+        // ── 主题颜色 ──────────────────────────────────────────
+        if (d.type === 'THEME_UPDATE') {
+            var r = document.documentElement.style;
+            if (d.pageBackground  !== undefined) r.setProperty('--theme-page-bg',     d.pageBackground);
+            if (d.navBar          !== undefined) r.setProperty('--theme-nav-bg',       d.navBar);
+            if (d.noticeBg        !== undefined) r.setProperty('--theme-notice-bg',    d.noticeBg);
+            if (d.authModule      !== undefined) r.setProperty('--theme-auth-bg',      d.authModule);
+            if (d.rechargeModule  !== undefined) r.setProperty('--theme-recharge-bg',  d.rechargeModule);
+            if (d.footer          !== undefined) r.setProperty('--theme-footer-bg',    d.footer);
+            if (d.modalBg         !== undefined) r.setProperty('--theme-modal-bg',     d.modalBg);
+            if (d.drawerBg        !== undefined) r.setProperty('--theme-drawer-bg',    d.drawerBg);
+        }
+
+        // ── 页脚预览 ──────────────────────────────────────────
+        if (d.type === 'FOOTER_PREVIEW') {
+            var SOCIAL_ICON_MAP = { facebook: 'images/Facebook.png', twitter: 'images/推特.png', discord: 'images/discord.png' };
+            var footerInfoEl = document.querySelector('.footer-info');
+            if (footerInfoEl && d.content !== undefined) footerInfoEl.innerHTML = d.content || '';
+            var socialWrapDyn = document.querySelector('.footer-social-dynamic');
+            if (d.socialLinks && d.socialLinks.length) {
+                var socialHtml = d.socialLinks.map(function(l) {
+                    var src = l.iconType === 'custom' ? l.customIcon : (SOCIAL_ICON_MAP[l.presetIcon] || '');
+                    if (!src) return '';
+                    return '<a href="' + l.url + '" target="_blank" rel="noopener" style="display:inline-block;margin-right:10px;">'
+                         + '<img src="' + src + '" alt="' + (l.presetIcon || 'social') + '" style="width:28px;height:28px;object-fit:contain;">'
+                         + '</a>';
+                }).join('');
+                if (socialWrapDyn) {
+                    socialWrapDyn.innerHTML = socialHtml;
+                } else {
+                    var newWrap = document.createElement('div');
+                    newWrap.className = 'footer-social-dynamic';
+                    newWrap.style.cssText = 'padding:10px 16px 0;';
+                    newWrap.innerHTML = socialHtml;
+                    var footerTarget = document.querySelector('.footer-info') || document.querySelector('.footer');
+                    if (footerTarget) footerTarget.appendChild(newWrap);
+                }
+            }
+        }
     });
     </script>
 
@@ -4322,7 +4549,7 @@
 
     <script>
         var prdVersions = [
-          {label:"v1.0 (最新)",date:"2026-04-16",content:"# 游戏充值中心（国内版移动端）- PRD\n\n**文档版本**：v1.0\n**创建日期**：2026-04-16\n\n---\n\n> **原型阶段说明**\n> 当前为产品原型阶段，页面内使用模拟数据展示效果。正式上线后，所有数据（档位/礼包/Banner/通知栏/主题颜色等）均从 B 端配置管理系统通过接口获取，C 端不硬编码任何业务数据。\n\n---\n\n## 1. 产品概述\n\n游戏充值中心（国内版）是一个面向中国大陆玩家的在线充值服务平台，为玩家提供便捷、安全的游戏代币充值和道具礼包购买服务。\n\n### 1.1 整体布局\n\n```\n┌─────────────────────────────┐\n│ 顶部导航（Logo + 添加到桌面 + 用户头像）│\n├─────────────────────────────┤\n│ Banner（轮播区，180px 高）    │\n├─────────────────────────────┤\n│ 通知栏（滚动文字公告）         │\n├─────────────────────────────┤\n│ 角色信息卡片（登录后显示）     │\n├─────────────────────────────┤\n│ Tab：代币充值 / 限时礼包       │\n│ 档位/礼包列表（2列网格）       │\n├─────────────────────────────┤\n│ 底部说明（充值到账/售后/提示） │\n└─────────────────────────────┘\n```\n\n---\n\n## 2. 数据来源与接入\n\n所有配置数据通过 URL 参数 `?site=站点名` 指定站点，从 B 端配置管理系统获取：\n\n| 数据类型 | 筛选条件 | 说明 |\n|---------|---------|------|\n| 站点信息 | `name === 站点名` | Logo、主题色、登录方式 |\n| 代币档位 | `siteName === 站点名 && status === 2` | 充值档位列表 |\n| 礼包 | `siteName === 站点名 && giftStatus === 2` | 礼包活动列表 |\n| Banner | `siteName === 站点名 && status === 2` | 轮播 Banner（时间有效） |\n| 通知栏 | `siteName === 站点名 && status === 2` | 公告通知（时间有效） |\n| 主题颜色 | postMessage 实时推送 | B端预览时即时更新 |\n\n**无数据时**：使用页面内静态兜底数据，不影响页面显示。\n\n---\n\n## 3. Banner 展示规则\n\n1. 获取所有 `status=2` 的 Banner，过滤活动时间有效的记录\n   - 时间判断：`startTime ≤ 当前时间 ≤ endTime`；无时间字段视为永久生效\n2. 按 `sort` 升序排列（数字越小越靠前）\n3. **多条 Banner**：每 3 秒自动轮播，底部显示圆点指示器，可点击切换\n4. **单条 Banner**：静态展示，不轮播\n5. **无生效 Banner**：展示默认图片（`images/banner.jpg`）\n6. 点击 Banner：配置了 `jumpUrl` 时新标签页打开\n\n---\n\n## 4. 通知栏展示规则\n\n1. 获取所有 `status=2` 的通知，过滤活动时间有效的记录（时间判断同 Banner）\n2. 按 `sort` 升序排列，**取第一条**展示\n3. **无生效通知**：通知栏区域保留，展示默认文案，不隐藏\n4. 若通知配置了 `linkText` 和 `linkUrl`，文字旁展示可点击超链接（新标签页打开）\n5. 通知栏可手动关闭；关闭后当次会话内不再显示\n\n---\n\n## 5. 登录认证模块\n\n支持三种登录方式（由 B 端站点配置决定开启哪些）：\n\n### 5.1 手机号 + 验证码\n\n```mermaid\nflowchart TD\n    A([输入手机号]) --> B([点击「获取验证码」])\n    B --> C[/\"发送验证码短信\\n60秒倒计时\\n提示：X秒后重新获取验证码\"/]\n    C --> D{倒计时结束}\n    D --> E[\"按钮变为「重新发送」\"]\n    E -->|点击重新发送| B\n    C --> F[\"用户输入验证码 + 勾选协议\"]\n    F --> G([点击「登录」])\n    G --> H{验证结果}\n    H -->|成功| I[\"选择角色 → 显示角色信息卡片\"]\n    H -->|失败| J[\"提示验证码错误\\n可重新获取\"]\n    J --> B\n```\n\n**规则**：无错误次数锁定；协议必须全部勾选才能登录\n\n### 5.2 账密登录\n\n输入账号 + 密码 + 勾选协议 → 点击登录 → 选择服务器和角色\n\n### 5.3 角色ID验证\n\n输入角色ID → 点击验证 → 成功后直接显示角色信息（无需选择角色）\n\n---\n\n## 6. 代币档位卡片结构\n\n每张卡片展示三层图片（均来自 B 端配置）：\n\n| 层级 | 图片来源 | 默认图 |\n|------|---------|--------|\n| 上方充值项大图 | 代币配置 `coinItemImage`（必填） | `images/充值项图片.png` |\n| 代币行图标 | 站点配置 `coinImage` | `images/代币图片.png` |\n| 赠送代币行图标 | 站点配置 `bonusCoinImage` | `images/赠送代币图片.png` |\n\n赠送代币行仅在 `bonusCoin > 0` 时显示。\n\n---\n\n## 7. 支付流程\n\n```mermaid\nflowchart TD\n    A([选择代币档位 / 礼包]) --> B{是否已登录}\n    B -->|未登录| C[弹出登录弹窗\\n完成登录]\n    C --> D\n    B -->|已登录| D[弹出订单抽屉\\n从底部上滑]\n    D --> E[\"展示订单信息\\n代币/赠送代币/赠送积分\\n购买数量（1~99）\"]\n    E --> F([选择支付方式\\n微信支付 / 支付宝])\n    F --> G[\"「立即支付」按钮激活\"]\n    G --> H([点击「立即支付」])\n    H --> I[\"展示二维码 + 300秒倒计时\\n提示扫码完成支付\"]\n    I --> J([点击「我已完成支付」])\n    J --> K{支付验证}\n    K -->|成功| L[结果覆盖层：支付成功]\n    K -->|失败| M[结果覆盖层：支付失败]\n```\n\n- 代币充值：1~99件，代币/赠送/积分按数量倍增\n- 礼包购买：1~99件，需校验限购次数\n- 必须选择支付方式后「立即支付」才可点击\n\n---\n\n## 8. 主题颜色支持\n\nB 端「主题颜色配置」发布后，通过 postMessage 实时推送到 C 端：\n\n| B 端字段名 | 中文说明 | 对应 C 端区域 |\n|-----------|---------|--------------|\n| 页面背景色 | 整个充值页面的底色 | 页面 `body` 背景 |\n| 顶部导航栏 | 顶部 Logo 和按钮所在的导航条 | `.header` |\n| 通知栏 | Banner 下方的公告横幅背景 | `.notice-bar` |\n| 角色验证模块 | 登录状态/角色信息卡片的背景色 | `.role-info` |\n| 充值模块 | 代币档位和礼包所在的面板背景色 | `.card` |\n| 页脚 | 页面底部充值说明区域背景色 | `.footer-info` |\n| 订单确认抽屉 | 选择商品后底部弹出的订单面板背景色 | `.order-drawer` |\n\n---\n\n\n---\n\n## 测试账号（原型演示用）\n\n> 以下为原型阶段 Mock 数据，仅用于功能演示，上线后替换为真实接口。\n\n### 手机号 + 验证码登录\n\n| 项目 | 值 |\n|------|-----|\n| 手机号 | 任意11位手机号均可 |\n| 验证码 | `123456` |\n\n### 账密登录\n\n| 账号 | 密码 |\n|------|------|\n| `test` | `123456` |\n\n### 角色ID验证\n\n| 角色ID | 服务器 | 角色名 | 等级 |\n|--------|--------|--------|------|\n| `10001` | 一区-艾泽拉斯 | 剑圣 | Lv.85 |\n| `10002` | 二区-洛丹伦 | 法师 | Lv.80 |\n| `10003` | 三区-暴风城 | 战士 | Lv.90 |\n\n\n## 版本历史\n\n| 版本 | 日期 | 内容 |\n|------|------|------|\n| v1.0 | 2026-04-16 | 初始版本 |\n"}
+          {label:"v1.0 (最新)",date:"2026-04-23",content:"# 游戏充值中心（国内版移动端）- PRD\n\n**文档版本**：v1.0  \n**最后更新**：2026-04-23\n\n---\n\n> **原型阶段说明**：C端通过 `?site=站点名` 参数从 localStorage 读取 B 端配置数据，自动渲染充值网页。正式上线后所有数据通过后端接口获取。\n\n---\n\n## 1. 产品定位与核心价值\n\n**核心价值**：运营人员通过 B 端一次配置，自动生成该游戏的国内移动端充值网页，无需为每款游戏单独开发 C 端代码。\n\n### 1.1 整体布局\n\n```\n┌─────────────────────────────┐\n│ 顶部导航（Logo + 添加到桌面） │\n├─────────────────────────────┤\n│ Banner（轮播区）              │\n├─────────────────────────────┤\n│ 通知栏（公告横幅）            │\n├─────────────────────────────┤\n│ 角色信息卡片（登录后显示）    │\n├─────────────────────────────┤\n│ Tab：代币充值 / 限时礼包      │\n│  代币档位列表（2列网格）      │\n│  礼包列表（列表布局）         │\n├─────────────────────────────┤\n│ 页脚（说明 + 社交媒体）       │\n└─────────────────────────────┘\n     ↓（点击档位/礼包后）\n┌─────────────────────────────┐\n│ 底部订单确认抽屉（上滑弹出）  │\n└─────────────────────────────┘\n```\n\n---\n\n## 2. B→C 配置映射（核心实现机制）\n\nC端通过 `?site=站点名` 从 localStorage 读取数据，实现「一套代码，配置即生效」。\n\n| B端配置模块 | C端展示区域 | 读取Key | 过滤条件 |\n|------------|------------|--------|---------|\n| 站点配置→游戏Logo | 顶部导航Logo | `site_config_data` | `name===站点名` |\n| 站点配置→代币图片 | 档位卡片代币行图标 | `site_config_data` | 同上 |\n| 站点配置→登录方式 | 登录弹窗Tab | `site_config_data` | 同上 |\n| Banner配置 | 顶部轮播Banner | `banner_config_data` | `siteName && status===2 && 时间有效` |\n| 通知栏配置 | 公告横幅文字 | `notification_config_data` | `siteName && status===2 && 时间有效` |\n| 代币配置（固定档位） | 档位卡片列表 | `coin_config_data` | `siteName && status===2 && type===fixed` |\n| 代币配置（自定义档位） | 最后一张特殊卡片 | `coin_config_data` | `siteName && status===2 && type===custom` |\n| 礼包配置 | 礼包列表 | `gift_config_data` | `siteName && giftStatus===2 && enabled` |\n| 页面配置→颜色 | 各区域背景色 | postMessage: THEME_UPDATE | — |\n| 页面配置→页脚内容 | 页脚富文本 | `page_content_data` | `siteName && dataSource===domestic` |\n| 页面配置→社交媒体 | 页脚社交图标 | `page_content_data` | 同上 |\n\n### 2.1 数据加载流程\n\n```mermaid\nflowchart TD\n    A([页面加载]) --> B[解析 ?site=站点名]\n    B --> C[从 site_config_data 读取站点信息]\n    C --> D[从各 key 读取该站点已生效配置]\n    D --> E[DOMContentLoaded 触发渲染]\n    E --> F[渲染 Banner 轮播]\n    F --> G[渲染通知栏]\n    G --> H[渲染代币档位卡片（固定+自定义放最后）]\n    H --> I[渲染礼包列表]\n    I --> J[渲染页脚 + 社交媒体]\n    J --> K[监听 postMessage 等待 B 端推送颜色]\n```\n\n### 2.2 异常处理规则\n\n| 异常场景 | 处理方式 |\n|---------|---------|\n| localStorage 无数据 | 使用静态兜底数据，不影响页面显示 |\n| JSON 解析失败 | catch 捕获，返回空数组 `[]`，继续渲染 |\n| 无生效代币数据 | 显示静态硬编码档位卡片 |\n| 无生效礼包数据 | 显示默认礼包卡片 |\n| 无生效 Banner | 显示默认图片 images/banner.jpg |\n| 无生效通知 | 通知栏显示默认文案 |\n| 图片加载失败 | 显示对应默认图片 |\n\n---\n\n## 3. Banner 展示规则\n\n1. 读取 `banner_config_data`，过滤：`siteName === 站点名 && status === 2`\n2. 再按时间过滤：`startTime ≤ 当前时间 ≤ endTime`（无时间字段视为永久有效）\n3. 按 `sort` 升序排列\n4. 多条：每3秒自动轮播；单条：静态展示\n5. 点击 Banner：有 `jumpUrl` 时新标签页跳转\n6. 无生效 Banner → 展示默认图（`images/banner.jpg`）\n\n---\n\n## 4. 通知栏展示规则\n\n1. 读取 `notification_config_data`，过滤条件同 Banner\n2. 按 `sort` 升序，取**第一条**展示\n3. 有 `linkText` 和 `linkUrl` 时，文字旁显示可点击超链接\n4. 右侧 × 按钮可关闭，关闭后当次会话内不再显示\n5. 无生效通知 → 显示默认文案\n\n---\n\n## 5. 代币档位渲染规则\n\n### 5.1 固定档位\n\n过滤：`siteName && status === 2 && (type === 'fixed' || !type)`\n\n**卡片结构（三层图片均来自 B 端配置）**：\n\n| 层级 | 图片来源 | 默认图 |\n|------|---------|--------|\n| 上方充值项大图 | 代币配置 `coinItemImage`（必填） | `images/充值项图片.png` |\n| 代币行图标 | 站点配置 `coinImage` | `images/代币图片.png` |\n| 赠送代币行图标 | 站点配置 `bonusCoinImage` | `images/赠送代币图片.png` |\n\n赠送代币行仅在 `bonusCoin > 0` 时显示。\n\n### 5.2 自定义档位（国内特有）\n\n每站点最多1条自定义档位，展示在所有固定档位**最后面**。\n\n**交互逻辑**：\n\n```mermaid\nflowchart TD\n    A([自定义档位卡片]) --> B[玩家输入代币数量]\n    B --> C[\"实时计算：\\n价格 = 数量 × unitPrice / 100 元\\n赠送 = floor(数量 × bonusRatioBonus / bonusRatioAmount)\"]\n    C --> D[实时更新卡片：代币数 / +赠送 / ¥价格]\n    D --> E{是否已登录}\n    E -->|已登录| F[触发订单抽屉]\n    E -->|未登录| G[弹出登录弹窗]\n    G --> F\n```\n\n字段说明：\n- `unitPrice`：代币单价（分/个），来自 B 端代币配置\n- `bonusRatioBonus / bonusRatioAmount`：赠送比例，如 1:1 表示每买1个赠1个\n\n---\n\n## 6. 礼包渲染规则\n\n过滤：`siteName && giftStatus === 2 && enabled !== false`\n\n展示字段：礼包图片 / 礼包名称 / 内容说明 / 价格 / 活动时间\n\n---\n\n## 7. 登录认证模块\n\n登录方式由 B 端站点配置「loginTypes」字段决定（国内可选：手机号验证码、账密、角色ID）。\n\n### 7.1 手机号 + 验证码\n\n```mermaid\nflowchart TD\n    A([输入手机号 + 勾选协议]) --> B([点击获取验证码])\n    B --> C[倒计时60秒]\n    C --> D([输入验证码 → 点击登录])\n    D --> E{验证}\n    E -->|成功| F[弹出角色选择 → 显示角色信息卡片]\n    E -->|失败| G[提示验证码错误]\n    G --> D\n```\n\n规则：无错误次数锁定；协议全部勾选才可点击登录\n\n### 7.2 账密登录\n\n账号 + 密码 + 勾选协议 → 登录 → 弹出角色选择弹窗 → 显示角色信息卡片\n\n### 7.3 角色ID验证\n\n输入角色ID → 点击验证 → 直接显示角色信息卡片（无需选择角色）\n\n---\n\n## 8. 支付流程\n\n```mermaid\nflowchart TD\n    A([点击档位/礼包卡片]) --> B{是否已登录}\n    B -->|未登录| C[弹出登录弹窗 → 完成登录]\n    C --> D\n    B -->|已登录| D[底部上滑订单抽屉]\n    D --> E[\"订单信息：商品/数量(1-99)/代币/赠送/积分/总价\"]\n    E --> F([选择支付方式：微信/支付宝])\n    F --> G([点击立即支付])\n    G --> H[支付二维码 + 300秒倒计时]\n    H --> I([点击「我已完成支付」])\n    I --> J{验证}\n    J -->|成功| K[✅ 支付成功]\n    J -->|超时/失败| L[❌ 支付失败 → 重新检测/联系客服]\n```\n\n规则：\n- 代币充值：1~99件，数量 × 各字段\n- 礼包购买：1~99件，校验限购次数（超限时按钮灰化+提示）\n- 必须选支付方式后「立即支付」才可点击\n- 300秒超时后订单作废\n\n---\n\n## 9. 主题颜色动态更新\n\nB端保存颜色配置后，通过 postMessage `THEME_UPDATE` 推送到 C 端 iframe：\n\n| B端字段 | CSS变量 | C端区域 |\n|--------|---------|--------|\n| pageBackground | `--theme-page-bg` | body |\n| navBar | `--theme-nav-bg` | .header |\n| noticeBg | `--theme-notice-bg` | .notice-bar |\n| authModule | `--theme-auth-bg` | .role-info |\n| rechargeModule | `--theme-recharge-bg` | .card |\n| footer | `--theme-footer-bg` | .footer-info |\n| modalBg | `--theme-modal-bg` | .modal |\n| drawerBg | `--theme-drawer-bg` | .order-drawer |\n\n---\n\n## 10. 页脚配置\n\nB端「页面配置→页脚配置」保存后，从 `page_content_data` 读取（`domesticFooterContent` + `domesticSocialLinks`）：\n\n- **页脚内容**：富文本 HTML，注入到 `.footer-info` 容器；无配置时显示默认充值说明\n- **社交媒体**：图标（Facebook/Twitter/Discord/自定义）+ 超链接，横排可点击\n- **postMessage FOOTER_PREVIEW**：B 端编辑时实时预览\n\n---\n\n## 11. 测试账号（原型演示用）\n\n> Mock 数据，仅供演示，上线后替换为真实接口。\n\n### 角色ID验证\n\n| 角色ID | 服务器 | 角色名 |\n|--------|--------|--------|\n| `10001` | Server 1 | Player001 |\n| `10002` | Server 2 | Player002 |\n| `10003` | Server 3 | Player003 |\n\n### 手机号验证码 / 账密登录\n\n| 项目 | 值 |\n|------|-----|\n| 手机号 | 任意11位均可 |\n| 账号 | `test` |\n| 密码 / 验证码 | `123456` |\n\n---\n\n## 版本历史\n\n| 版本 | 日期 | 内容 |\n|------|------|------|\n| v1.0 | 2026-04-23 | 完整版（B→C配置映射/数据读取/渲染逻辑/异常处理/流程图/演示账号） |\n"}
         ];
         var prdCurrentVersion = 0;
         var prdLoaded = false;
