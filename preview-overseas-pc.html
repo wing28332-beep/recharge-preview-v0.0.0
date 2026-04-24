@@ -197,7 +197,7 @@
                            || active.find(x => x.language === 'Others' || x.language === 'others')
                            || active[0];
                     if (!b) return;
-                    const imgSrc = b.bannerImage || '../images/banner.jpg';
+                    const imgSrc = b.bannerImage || 'images/banner.jpg';
                     bannerEl.innerHTML = b.jumpUrl
                         ? `<a href="${b.jumpUrl}" target="_blank"><img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;"></a>`
                         : `<img src="${imgSrc}" style="width:100%;height:100%;object-fit:cover;">`;
@@ -245,8 +245,8 @@
                 const curCode = tiersToShow[0].localCurrency
                     || (window.__currentCurrency && window.__currentCurrency.code)
                     || 'USD';
-                const coinImg = siteInfo.coinImage || '../images/代币图片.png';
-                const bonusImg = siteInfo.bonusCoinImage || '../images/赠送代币图片.png';
+                const coinImg = siteInfo.coinImage || 'images/代币图片.png';
+                const bonusImg = siteInfo.bonusCoinImage || 'images/赠送代币图片.png';
                 tierGrid.innerHTML = tiersToShow.map((c, idx) => {
                     const priceNum = c.localPrice ? c.localPrice / 100 : c.price / 100;
                     const priceStr = curCode + ' ' + Math.round(priceNum).toLocaleString();
@@ -256,7 +256,7 @@
                     const amtBonus = c.bonusCoin > 0
                         ? `<img src="${bonusImg}" class="tier-coin-icon"> <span class="tier-amt-bonus">${c.bonusCoin.toLocaleString()}</span>` : '';
                     const limitHtml = c.limitCount ? `Purchase Limit: ${c.limitCount}` : 'Purchase Limit: —';
-                    const itemImg = c.giftImage || c.coinItemImage || '../images/充值项图片.png';
+                    const itemImg = c.giftImage || c.coinItemImage || 'images/充值项图片.png';
                     return `<div class="tier-card${c.isHighlight?' highlight':''}" data-idx="${idx}" onclick="pickTier(this,${idx})">
                         ${pctBadge}${hotBadge}
                         <div class="tier-img-wrap">
@@ -310,7 +310,7 @@
                         ? `<div class="gift-purchase-limit">(Purchase Limit: ${g.limitCount})</div>` : '';
                     return `<div class="gift-card" onclick="pickGift(this,${idx})">
                         <div class="gift-img-wrap">
-                            <img src="${g.giftImage || '../images/libao.png'}" alt="${g.giftName}">
+                            <img src="${g.giftImage || 'images/libao.png'}" alt="${g.giftName}">
                         </div>
                         <div class="gift-info-wrap">
                             <div class="gift-name">${g.giftName}</div>
@@ -1427,7 +1427,7 @@
     <div class="header">
         <!-- Logo 区 -->
         <div class="logo">
-            <img src="../images/gameicon.png" alt="game" class="game-icon">
+            <img src="images/gameicon.png" alt="game" class="game-icon">
             <div class="official-store-badge">
                 <span class="badge-official">OFFICIAL</span>
                 <span class="badge-store">STORE</span>
@@ -1476,7 +1476,7 @@
 
     <!-- Banner -->
     <div class="banner">
-        <img src="../images/banner.jpg" alt="Recharge Event">
+        <img src="images/banner.jpg" alt="Recharge Event">
     </div>
 
     <!-- 通知栏 -->
@@ -1505,7 +1505,7 @@
                         <!-- 默认静态档位 -->
                         <div class="tier-card" onclick="pickTier(this)">
                             <div class="tier-img-wrap">
-                                <img src="../images/daibi.png" alt="token">
+                                <img src="images/daibi.png" alt="token">
                             </div>
                             <div class="tier-body">
                                 <div class="tier-amount-row">
@@ -1517,7 +1517,7 @@
                         </div>
                         <div class="tier-card" onclick="pickTier(this)">
                             <div class="tier-img-wrap">
-                                <img src="../images/daibi.png" alt="token">
+                                <img src="images/daibi.png" alt="token">
                             </div>
                             <div class="tier-body">
                                 <div class="tier-amount-row">
@@ -1530,7 +1530,7 @@
                         <div class="tier-card" onclick="pickTier(this)">
                             <div class="tier-bonus-pct">+20%</div>
                             <div class="tier-img-wrap">
-                                <img src="../images/daibi.png" alt="token">
+                                <img src="images/daibi.png" alt="token">
                             </div>
                             <div class="tier-body">
                                 <div class="tier-amount-row">
@@ -1545,7 +1545,7 @@
                             <div class="tier-bonus-pct">+27%</div>
                             <div class="tier-hot-badge">HOT</div>
                             <div class="tier-img-wrap">
-                                <img src="../images/daibi.png" alt="token">
+                                <img src="images/daibi.png" alt="token">
                             </div>
                             <div class="tier-body">
                                 <div class="tier-amount-row">
@@ -1559,7 +1559,7 @@
                         <div class="tier-card" onclick="pickTier(this)">
                             <div class="tier-bonus-pct">+33%</div>
                             <div class="tier-img-wrap">
-                                <img src="../images/daibi.png" alt="token">
+                                <img src="images/daibi.png" alt="token">
                             </div>
                             <div class="tier-body">
                                 <div class="tier-amount-row">
@@ -1573,7 +1573,7 @@
                         <div class="tier-card" onclick="pickTier(this)">
                             <div class="tier-bonus-pct">+50%</div>
                             <div class="tier-img-wrap">
-                                <img src="../images/daibi.png" alt="token">
+                                <img src="images/daibi.png" alt="token">
                             </div>
                             <div class="tier-body">
                                 <div class="tier-amount-row">
@@ -1594,7 +1594,7 @@
                     <!-- 默认静态礼包 -->
                     <div class="gift-card" onclick="pickGift(this)">
                         <div class="gift-img-wrap">
-                            <img src="../images/libao.png" alt="Starter Pack">
+                            <img src="images/libao.png" alt="Starter Pack">
                         </div>
                         <div class="gift-info-wrap">
                             <div class="gift-name">Starter Pack</div>
@@ -1611,7 +1611,7 @@
                     </div>
                     <div class="gift-card" onclick="pickGift(this)">
                         <div class="gift-img-wrap">
-                            <img src="../images/libao.png" alt="Deluxe Pack">
+                            <img src="images/libao.png" alt="Deluxe Pack">
                         </div>
                         <div class="gift-info-wrap">
                             <div class="gift-name">Deluxe Pack</div>
@@ -2036,10 +2036,10 @@
 
         // ── 支付方式 Mock 数据 ────────────────────────────────
         var PAYMENT_META = {
-            visa:      { label:'Visa/MasterCard', img:'../images/visa.png' },
-            paypal:    { label:'PayPal',           img:'../images/pm_paypal.png' },
-            applepay:  { label:'Apple Pay',        img:'../images/pm_applepay.png' },
-            googlepay: { label:'Google Pay',       img:'../images/GooglePay.png' },
+            visa:      { label:'Visa/MasterCard', img:'images/visa.png' },
+            paypal:    { label:'PayPal',           img:'images/pm_paypal.png' },
+            applepay:  { label:'Apple Pay',        img:'images/pm_applepay.png' },
+            googlepay: { label:'Google Pay',       img:'images/GooglePay.png' },
         };
         var REGION_DEFAULT_PAYMENTS = {
             TW:['visa','paypal','googlepay'], JP:['visa','applepay','googlepay'],
@@ -2267,7 +2267,7 @@
                 );
                 var socialLinks = footerCfgForSocial && footerCfgForSocial.socialLinks;
                 if (socialLinks && socialLinks.length) {
-                    var PRESET_ICON = { facebook: '../images/Facebook.png', twitter: '../images/推特.png', discord: '../images/discord.png' };
+                    var PRESET_ICON = { facebook: 'images/Facebook.png', twitter: 'images/推特.png', discord: 'images/discord.png' };
                     socialEl.innerHTML = socialLinks.map(function(l) {
                         var src = l.iconType === 'custom' ? l.customIcon : (PRESET_ICON[l.presetIcon] || '');
                         if (!src) return '';
@@ -2623,7 +2623,7 @@
 
         // ── 页脚预览 ──────────────────────────────────────────
         if (d.type === 'FOOTER_PREVIEW') {
-            var SOCIAL_ICON_MAP = { facebook: '../images/Facebook.png', twitter: '../images/推特.png', discord: '../images/discord.png' };
+            var SOCIAL_ICON_MAP = { facebook: 'images/Facebook.png', twitter: 'images/推特.png', discord: 'images/discord.png' };
             var fdEl3 = document.getElementById('footerDesc');
             if (fdEl3 && d.content !== undefined) fdEl3.innerHTML = d.content || '';
             var socialEl2 = document.querySelector('.footer-social');

@@ -45,8 +45,8 @@
                     const imgs = activeBanners.map((b, i) => `
                         <div class="banner-slide" style="display:${i===0?'block':'none'};width:100%;height:100%;position:absolute;top:0;left:0;">
                             ${b.jumpUrl
-                                ? `<a href="${b.jumpUrl}" target="_blank"><img src="${b.bannerImage||'../images/banner.jpg'}" style="width:100%;height:100%;object-fit:cover;"></a>`
-                                : `<img src="${b.bannerImage||'../images/banner.jpg'}" style="width:100%;height:100%;object-fit:cover;">`}
+                                ? `<a href="${b.jumpUrl}" target="_blank"><img src="${b.bannerImage||'images/banner.jpg'}" style="width:100%;height:100%;object-fit:cover;"></a>`
+                                : `<img src="${b.bannerImage||'images/banner.jpg'}" style="width:100%;height:100%;object-fit:cover;">`}
                         </div>`).join('');
                     const dots = activeBanners.length > 1
                         ? `<div class="banner-dots">${activeBanners.map((_,i) => `<div class="banner-dot ${i===0?'active':''}"></div>`).join('')}</div>`
@@ -92,14 +92,14 @@
             if (tierGrid && coins.length > 0) {
                 const fixedCoins = coins.filter(c => !c.type || c.type === 'fixed');
                 const customCoin = coins.find(c => c.type === 'custom');
-                const coinImg  = siteInfo.coinImage  || '../images/代币图片.png';
-                const bonusImg = siteInfo.bonusCoinImage || '../images/赠送代币图片.png';
+                const coinImg  = siteInfo.coinImage  || 'images/代币图片.png';
+                const bonusImg = siteInfo.bonusCoinImage || 'images/赠送代币图片.png';
                 window.__dynamicTiers = fixedCoins;
 
                 let html = fixedCoins.map((c, idx) => {
                     const price = (c.price / 100).toFixed(0);
                     const points = Math.round(c.price / 100 * 100);
-                    const itemImg = c.coinItemImage || '../images/充值项图片.png';
+                    const itemImg = c.coinItemImage || 'images/充值项图片.png';
                     const bonusHtml = c.bonusCoin > 0
                         ? `<span class="tier-plus">+</span>
                            <img src="${bonusImg}" alt="赠送" class="tier-coin-icon">
@@ -130,7 +130,7 @@
                     <div class="tier-card tier-card-custom" id="customTierCard" onclick="">
                         <div class="tier-points-top">自定义档位</div>
                         <div class="tier-item-img-wrap">
-                            <img src="${customCoin.coinItemImage || '../images/充值项图片.png'}" alt="充值项" class="tier-item-img">
+                            <img src="${customCoin.coinItemImage || 'images/充值项图片.png'}" alt="充值项" class="tier-item-img">
                         </div>
                         <div style="padding:4px 0;">
                             <input type="number" id="customTierInput" min="1" placeholder="输入100的倍数"
@@ -184,7 +184,7 @@
                         <div class="gift-points-badge">赠送${points}积分</div>
                         <div class="gift-main">
                             <div class="gift-left">
-                                <img src="${g.giftImage || '../images/libao.png'}" alt="${g.giftName}">
+                                <img src="${g.giftImage || 'images/libao.png'}" alt="${g.giftName}">
                             </div>
                             <div class="gift-middle">
                                 <div class="gift-name">${g.giftName}</div>
@@ -211,7 +211,7 @@
             (function renderSocialLinks() {
                 const links = pageContent.domesticSocialLinks || [];
                 if (!links.length) return;
-                const PRESET_ICON = { facebook: '../images/Facebook.png', twitter: '../images/推特.png', discord: '../images/discord.png' };
+                const PRESET_ICON = { facebook: 'images/Facebook.png', twitter: 'images/推特.png', discord: 'images/discord.png' };
                 const html = links.map(function(l) {
                     var src = l.iconType === 'custom' ? l.customIcon : (PRESET_ICON[l.presetIcon] || '');
                     if (!src) return '';
@@ -1226,7 +1226,7 @@
     <!-- 顶部导航 -->
     <div class="header">
         <div class="logo">
-            <img src="../images/gameicon.png" alt="游戏图标" class="game-icon">
+            <img src="images/gameicon.png" alt="游戏图标" class="game-icon">
             <span>官方充值中心</span>
         </div>
         <div class="header-right">
@@ -1244,7 +1244,7 @@
 
     <!-- Banner -->
     <div class="banner">
-        <img src="../images/banner.jpg" alt="充值活动">
+        <img src="images/banner.jpg" alt="充值活动">
     </div>
 
     <!-- 通知栏（banner下方，与移动端一致） -->
@@ -1281,66 +1281,66 @@
                         <!-- 默认静态档位（B端无数据时显示） -->
                         <div class="tier-card" onclick="selectTier(this)">
                             <div class="tier-points-top">赠送600积分</div>
-                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-item-img-wrap"><img src="images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
                             <div class="tier-amount-row-new">
-                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <img src="images/代币图片.png" alt="代币" class="tier-coin-icon">
                                 <span class="tier-amount">100</span>
                             </div>
                             <div class="tier-price-bottom">¥6</div>
                         </div>
                         <div class="tier-card" onclick="selectTier(this)">
                             <div class="tier-points-top">赠送3000积分</div>
-                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-item-img-wrap"><img src="images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
                             <div class="tier-amount-row-new">
-                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <img src="images/代币图片.png" alt="代币" class="tier-coin-icon">
                                 <span class="tier-amount">500</span>
                             </div>
                             <div class="tier-price-bottom">¥30</div>
                         </div>
                         <div class="tier-card" onclick="selectTier(this)">
                             <div class="tier-points-top">赠送6000积分</div>
-                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-item-img-wrap"><img src="images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
                             <div class="tier-amount-row-new">
-                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <img src="images/代币图片.png" alt="代币" class="tier-coin-icon">
                                 <span class="tier-amount">1000</span>
                                 <span class="tier-plus">+</span>
-                                <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                                <img src="images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
                                 <span class="tier-bonus">+200</span>
                             </div>
                             <div class="tier-price-bottom">¥60</div>
                         </div>
                         <div class="tier-card" onclick="selectTier(this)">
                             <div class="tier-points-top">赠送16800积分</div>
-                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-item-img-wrap"><img src="images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
                             <div class="tier-amount-row-new">
-                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <img src="images/代币图片.png" alt="代币" class="tier-coin-icon">
                                 <span class="tier-amount">3000</span>
                                 <span class="tier-plus">+</span>
-                                <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                                <img src="images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
                                 <span class="tier-bonus">+800</span>
                             </div>
                             <div class="tier-price-bottom">¥168</div>
                         </div>
                         <div class="tier-card" onclick="selectTier(this)">
                             <div class="tier-points-top">赠送32800积分</div>
-                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-item-img-wrap"><img src="images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
                             <div class="tier-amount-row-new">
-                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <img src="images/代币图片.png" alt="代币" class="tier-coin-icon">
                                 <span class="tier-amount">6000</span>
                                 <span class="tier-plus">+</span>
-                                <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                                <img src="images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
                                 <span class="tier-bonus">+2000</span>
                             </div>
                             <div class="tier-price-bottom">¥328</div>
                         </div>
                         <div class="tier-card" onclick="selectTier(this)">
                             <div class="tier-points-top">赠送49800积分</div>
-                            <div class="tier-item-img-wrap"><img src="../images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
+                            <div class="tier-item-img-wrap"><img src="images/充值项图片.png" alt="充值项" class="tier-item-img"></div>
                             <div class="tier-amount-row-new">
-                                <img src="../images/代币图片.png" alt="代币" class="tier-coin-icon">
+                                <img src="images/代币图片.png" alt="代币" class="tier-coin-icon">
                                 <span class="tier-amount">10000</span>
                                 <span class="tier-plus">+</span>
-                                <img src="../images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
+                                <img src="images/赠送代币图片.png" alt="赠送" class="tier-coin-icon">
                                 <span class="tier-bonus">+5000</span>
                             </div>
                             <div class="tier-price-bottom">¥498</div>
@@ -1357,7 +1357,7 @@
                         <div class="gift-points-badge">赠送3000积分</div>
                         <div class="gift-main">
                             <div class="gift-left">
-                                <img src="../images/libao.png" alt="新手礼包">
+                                <img src="images/libao.png" alt="新手礼包">
                             </div>
                             <div class="gift-middle">
                                 <div class="gift-name">新手礼包</div>
@@ -1377,7 +1377,7 @@
                         <div class="gift-points-badge">赠送12800积分</div>
                         <div class="gift-main">
                             <div class="gift-left">
-                                <img src="../images/libao.png" alt="豪华礼包">
+                                <img src="images/libao.png" alt="豪华礼包">
                             </div>
                             <div class="gift-middle">
                                 <div class="gift-name">豪华礼包</div>
@@ -2110,7 +2110,7 @@
 
         // ── 页脚预览 ──────────────────────────────────────────
         if (d.type === 'FOOTER_PREVIEW') {
-            var SOCIAL_ICON_MAP = { facebook: '../images/Facebook.png', twitter: '../images/推特.png', discord: '../images/discord.png' };
+            var SOCIAL_ICON_MAP = { facebook: 'images/Facebook.png', twitter: 'images/推特.png', discord: 'images/discord.png' };
             var footerInnerEl = document.querySelector('.footer .footer-inner');
             if (footerInnerEl && d.content !== undefined) footerInnerEl.innerHTML = d.content || '';
             var socialWrapDynEl = document.querySelector('.footer-social-dynamic');
